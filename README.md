@@ -46,13 +46,14 @@ The option ```--model_dir <check_point_dir>``` automatically selects the weights
 ```
 python eval.py --model_dir checkpoints/demo_model --dataset_path data/synthetic_data/eval_dataset.pkl --vehicle_speed 41 --wait_time 0.5 --time_horizon 12 --gpu 0
 ```
+python eval.py --model_dir checkpoints/demo_model --dataset_path data/synthetic_data/eval_dataset.pkl --vehicle_speed 41 --wait_time 0.5 --time_horizon 12 --visualize_routes
 
 ## 🧪 Reproducibility
 Regarding the synthetic datasets, you can reproduce our experimental results in [reproduce_results.ipynb](./reproduce_results.ipynb).  
 Please take a glance at the content via nbviwer: [nbviwer-evrp-eps](https://nbviewer.org/github/ntt-dkiku/evrp-eps/blob/main/reproduce_results.ipynb).
 You can open the Jupyter Notebook server with the following command inside the container, then access it from your browser on localhost.
 ```
-jupyter lab --allow-root --no-browser --ip=0.0.0.0 --port <container_port>
+jupyter lab --allow-root --no-browser --ip=0.0.0.0 --port 8888
 ```
 
 ## 🐞 Bug reports and questions

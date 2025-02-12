@@ -14,14 +14,14 @@ from models.state import visualize_routes as vis_routes
 from models.state import save_route_info
 
 def eval(dataset_path: str,
-         eval_batch_size: int = 256,
+         eval_batch_size: int = 128, #2#256->128
          max_load_size: int = -1,
          model_type: str = "rl",
          model_path: str = None,
          model_dir: str = None,
          decode_type: str = "sampling",
-         search_width: int = 12800,
-         max_batch_size: int = 128,
+         search_width: int = 128,    #4 12800->128
+         max_batch_size: int = 128,   #3 12800-128
          penalty_coef: float = 100,
          vehicle_speed: float = 41,
          wait_time: float = 0.5,
@@ -29,7 +29,7 @@ def eval(dataset_path: str,
          random_seed: int = 1234,
          gpu: int = -1,
          num_workers: int = 4,
-         visualize_routes: bool = False,
+         visualize_routes: bool = True,
          output_dir: str = None) -> Dict[str, Any]:
     #-----------------
     # set random seed
@@ -129,6 +129,8 @@ def eval(dataset_path: str,
         # visualization
         #---------------
         if visualize_routes:
+            if not output_dir:    # 6 set defualt output path
+                output_dir = './output'  # 设置一个默认目录路径
             os.makedirs(output_dir, exist_ok=True)
             vis_routes(vehicle_ids, node_ids, batch, f"{output_dir}/batch{batch_id}", device)
             save_route_info(batch, vehicle_ids, node_ids, mask, f"{output_dir}/batch{batch_id}")
@@ -204,8 +206,8 @@ if __name__ == "__main__":
     parser.add_argument("--model_path",     type=str, default=None)
     parser.add_argument("--model_dir",      type=str, default=None)
     parser.add_argument("--decode_type",    type=str, default="sampling")
-    parser.add_argument("--search_width",   type=int, default=12800)
-    parser.add_argument("--max_batch_size", type=int, default=12800)
+    parser.add_argument("--search_width",   type=int, default=128)
+    parser.add_argument("--max_batch_size", type=int, default=128)
     parser.add_argument("--penalty_coef",   type=float, default=100)
     # other parameters
     parser.add_argument("--vehicle_speed", type=float, default=41.0)

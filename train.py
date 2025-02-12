@@ -13,9 +13,7 @@ from generate_dataset import CIRPDataset
 def main(args: argparse.Namespace) -> None:
     # save parameter settings
     if os.path.exists(args.checkpoint_dir):
-        response = input(f"The directory '{args.checkpoint_dir}' already exists. Do you want to overwrite it? [y/n]: ").strip().lower()
-        if response != 'y':
-            assert False, "If you don't want to overwrite the checkpoint directory, please specify another checkpoint_dir."
+        response =  'y'  # 5 delete judge
     os.makedirs(args.checkpoint_dir, exist_ok=True)
     with open(f'{args.checkpoint_dir}/cmd_args.dat', 'w') as f:
         json.dump(args.__dict__, f, indent=2)

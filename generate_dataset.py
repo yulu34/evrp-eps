@@ -25,7 +25,7 @@ class CIRPDataset(Dataset):
     
     def generate(self,
                  num_samples: int, 
-                 num_locs: int, 
+                 num_custms: int, 
                  num_depots: int, 
                  num_vehicles: int, 
                  vehicle_cap: float, 
@@ -45,7 +45,7 @@ class CIRPDataset(Dataset):
         -------
         """
         self.dataset = self.generate_dataset(num_samples=num_samples,
-                                             num_locs=num_locs,
+                                             num_custms=num_custms,
                                              num_depots=num_depots,
                                              num_vehicles=num_vehicles,
                                              vehicle_cap=vehicle_cap,
@@ -84,7 +84,7 @@ class CIRPDataset(Dataset):
         return self
 
     def generate_instance(self,
-                          num_locs: int,
+                          num_custms: int,
                           num_depots: int, 
                           num_vehicles: int, 
                           vehicle_cap: float,
@@ -95,20 +95,21 @@ class CIRPDataset(Dataset):
                           grid_scale: float = 100.0,
                           random_seed: int = None):
         if random_seed is not None:
+            random_seed = int(random_seed) # 1
             torch.manual_seed(random_seed)
             random.seed(random_seed)
 
         coord_dim = 2
-        num_nodes = num_locs + num_depots
+        num_nodes = num_custms + num_depots
         #-----------------------
         # vehicles (homogeneous)
         #-----------------------
         vehicle_cap = [vehicle_cap for _ in range(num_vehicles)] # [num_vehicle]
-        vehicle_initial_position_id = torch.randint(num_locs, num_nodes, (num_vehicles, )) # [num_vehicles]
+        vehicle_initial_position_id = torch.randint(num_custms, num_nodes, (num_vehicles, )) # [num_vehicles]
         vehicle_discharge_rate = torch.FloatTensor([vehicle_discharge_rate for _ in range(num_vehicles)])
         vehicle_consump_rate = torch.FloatTensor([0.161 * grid_scale for _ in range(num_vehicles)]) # 
         #-----------
-        # locations
+        # custmations
         #-----------
         # TODO : wide-range capacity candidates
         capacity_consump = {
@@ -118,14 +119,14 @@ class CIRPDataset(Dataset):
             46.8: np.arange(1.1, 6.0, 0.1).tolist()
         }
         weights = [6, 9, 51, 59]
-        loc_coords = torch.FloatTensor(num_locs, coord_dim).uniform_(0, 1) # [num_locs x coord_dim]
-        loc_cap = torch.FloatTensor(random.choices(list(map(lambda x: round(x, 2), capacity_consump.keys())), k=num_locs, weights=weights)) # [num_locs]
-        loc_initial_battery = (torch.rand(num_locs) * .5 + .5) * loc_cap  # 50 - 100% of the capacity [num_locs]
+        custm_coords = torch.FloatTensor(num_custms, coord_dim).uniform_(0, 1) # [num_custms x coord_dim]
+        custm_cap = torch.FloatTensor(random.choices(list(map(lambda x: round(x, 2), capacity_consump.keys())), k=num_custms, weights=weights)) # [num_custms]
+        custm_initial_battery = (torch.rand(num_custms) * .5 + .5) * custm_cap  # 50 - 100% of the capacity [num_custms]
         # conditional probability
-        loc_consump_list = []
-        for cap in loc_cap:
-            loc_consump_list.append(random.choices(capacity_consump[round(cap.item(), 2)], k=1))
-        loc_consump_rate = torch.FloatTensor(loc_consump_list).squeeze(1) # [num_locs]
+        custm_consump_list = []
+        for cap in custm_cap:
+            custm_consump_list.append(random.choices(capacity_consump[round(cap.item(), 2)], k=1))
+        custm_consump_rate = torch.FloatTensor(custm_consump_list).squeeze(1) # [num_custms]
         #--------
         # depots
         #--------
@@ -139,10 +140,10 @@ class CIRPDataset(Dataset):
            
         return {
             "grid_scale": torch.FloatTensor([grid_scale]),
-            "loc_coords": loc_coords,
-            "loc_cap": loc_cap * cap_ratio,
-            "loc_consump_rate": loc_consump_rate,
-            "loc_initial_battery": loc_initial_battery * cap_ratio,
+            "custm_coords": custm_coords,
+            "custm_cap": custm_cap * cap_ratio,
+            "custm_consump_rate": custm_consump_rate,
+            "custm_initial_battery": custm_initial_battery * cap_ratio,
             "depot_coords": depot_coords,
             "depot_discharge_rate": depot_discharge_rate,
             "vehicle_cap": torch.FloatTensor(vehicle_cap) * cap_ratio,
@@ -154,7 +155,7 @@ class CIRPDataset(Dataset):
 
     def generate_dataset(self,
                          num_samples: int, 
-                         num_locs: int, 
+                         num_custms: int, 
                          num_depots: int, 
                          num_vehicles: int, 
                          vehicle_cap: float, 
@@ -166,7 +167,7 @@ class CIRPDataset(Dataset):
                          random_seed: int = 1234):
         seeds = random_seed + np.arange(num_samples)
         return [
-            self.generate_instance(num_locs=num_locs,
+            self.generate_instance(num_custms=num_custms,
                                    num_depots=num_depots,
                                    num_vehicles=num_vehicles,
                                    vehicle_cap=vehicle_cap,
@@ -181,7 +182,7 @@ class CIRPDataset(Dataset):
 
     def generate_dataset_para(self,
                               num_samples: int, 
-                              num_locs: int, 
+                              num_custms: int, 
                               num_depots: int, 
                               num_vehicles: int, 
                               vehicle_cap: float, 
@@ -191,10 +192,10 @@ class CIRPDataset(Dataset):
                               cap_ratio: float = 0.8,
                               grid_scale: float = 100.0,
                               random_seed: int = 1234,
-                              num_cpus: int = 4):
+                              num_cpus: int = 8):
         seeds = random_seed + np.arange(num_samples)
         with Pool(num_cpus) as pool:
-            dataset = list(pool.starmap(self.generate_instance, tqdm([(num_locs, 
+            dataset = list(pool.starmap(self.generate_instance, tqdm([(num_custms, 
                                                                        num_depots,
                                                                        num_vehicles,
                                                                        vehicle_cap,
@@ -213,7 +214,7 @@ if __name__ == "__main__":
     parser.add_argument("--type", type=str, nargs="*", default=["all"])
     parser.add_argument("--num_samples", type=int, nargs="*", default=[1280000, 10000, 10000])
     parser.add_argument("--num_depots", type=int, default=12)
-    parser.add_argument("--num_locs", type=int, default=50)
+    parser.add_argument("--num_custms", type=int, default=50)
     parser.add_argument("--num_vehicles", type=int, default=12)
     parser.add_argument("--vehicle_cap", type=float, default=60.0) # all the vehicles have the same capacity
     parser.add_argument("--vehicle_discharge_rate", type=float, default=10.0)
@@ -222,7 +223,7 @@ if __name__ == "__main__":
     parser.add_argument("--discharge_lim_ratio", type=float, default=0.1)
     parser.add_argument("--grid_scale", type=float, default=100.0)
     parser.add_argument("--parallel", action="store_true")
-    parser.add_argument("--num_cpus", type=int, default=4)
+    parser.add_argument("--num_cpus", type=int, default=8)
     
     args = parser.parse_args()
     os.makedirs(args.save_dir, exist_ok=True)
@@ -236,7 +237,7 @@ if __name__ == "__main__":
 
     if args.parallel:
         dataset = CIRPDataset().generate_dataset_para(num_samples=num_samples,
-                                                      num_locs=args.num_locs,
+                                                      num_custms=args.num_custms,
                                                       num_depots=args.num_depots,
                                                       num_vehicles=args.num_vehicles,
                                                       vehicle_cap=args.vehicle_cap,
@@ -249,7 +250,7 @@ if __name__ == "__main__":
                                                       num_cpus=args.num_cpus)
     else:
         dataset = CIRPDataset().generate_dataset(num_samples=num_samples,
-                                                num_locs=args.num_locs,
+                                                num_custms=args.num_custms,
                                                 num_depots=args.num_depots,
                                                 num_vehicles=args.num_vehicles,
                                                 vehicle_cap=args.vehicle_cap,

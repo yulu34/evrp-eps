@@ -27,6 +27,7 @@ If you want to change some parameters, check the other options with ```python ge
 ```
 python generate_dataset.py --save_dir data/synthetic_data --type all --num_samples 1280000 10000 10000
 ```
+python generate_dataset.py --save_dir data/synthetic_data --type all --num_samples 128 1 1
 
 ### 2. Training
 We train the RL model on the synthetic datasets. Check the other options with ```python train.py -h```.

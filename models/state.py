@@ -77,13 +77,13 @@ def save_route_info(inputs: Dict[str, torch.tensor],
         node_ids = node_ids.unsqueeze(0).expand(1, node_ids.size(-1))
         mask = mask.unsqueeze(0).expand(1, mask.size(-1))
     sample = 0
-    loc_coords = inputs["loc_coords"][sample].tolist()
+    custm_coords = inputs["custm_coords"][sample].tolist()
     depot_coords = inputs["depot_coords"][sample].tolist()
     veh_init_pos_ids = inputs["vehicle_initial_position_id"][sample].tolist()
 
     ignored_depots = (inputs["depot_discharge_rate"][sample] < 10.0).tolist()
     for veh_init_pos_id in veh_init_pos_ids:
-        ignored_depots[veh_init_pos_id - len(loc_coords)] = False
+        ignored_depots[veh_init_pos_id - len(custm_coords)] = False
 
     vehicle_id = vehicle_ids[sample]
     node_id = node_ids[sample]
@@ -100,7 +100,7 @@ def save_route_info(inputs: Dict[str, torch.tensor],
         else:
             routes[vehicle_id[step]].append(node_id[step].item())
     route_info = {
-        "loc_coords": loc_coords,
+        "custm_coords": custm_coords,
         "depot_coords": depot_coords,
         "ignored_depots": ignored_depots,
         "route": routes
@@ -115,14 +115,14 @@ class CIRPState(object):
                  device: str,
                  fname: str = None):
         #-----------
-        # locations
+        # custmations
         #-----------
         # static 
-        self.loc_coords       = input["loc_coords"]         # [batch_size x num_locs x coord_dim]
-        self.loc_cap          = input["loc_cap"]            # [batch_size x num_locs]
-        self.loc_consump_rate = input["loc_consump_rate"]   # [batch_size x num_locs]
+        self.custm_coords       = input["custm_coords"]         # [batch_size x num_custms x coord_dim]
+        self.custm_cap          = input["custm_cap"]            # [batch_size x num_custms]
+        self.custm_consump_rate = input["custm_consump_rate"]   # [batch_size x num_custms]
         # dynamic
-        self.loc_curr_battery = input["loc_initial_battery"].clone() # [batch_size x num_locs]
+        self.custm_curr_battery = input["custm_initial_battery"].clone() # [batch_size x num_custms]
 
         #--------
         # depots
@@ -135,9 +135,9 @@ class CIRPState(object):
         self.small_depots = self.depot_discharge_rate < self.th # [batch_size x num_depots]
         
         #-------------------
-        # locations & depot
+        # custmations & depot
         #-------------------
-        self.coords = torch.cat((self.loc_coords, self.depot_coords), 1)
+        self.coords = torch.cat((self.custm_coords, self.depot_coords), 1)
 
         #----------
         # vehicles
@@ -164,43 +164,43 @@ class CIRPState(object):
         #-----------
         # paramters
         #-----------
-        self.batch_size   = self.loc_coords.size(0)
-        self.coord_dim    = self.loc_coords.size(-1)
-        self.num_locs     = self.loc_coords.size(1)
+        self.batch_size   = self.custm_coords.size(0)
+        self.coord_dim    = self.custm_coords.size(-1)
+        self.num_custms     = self.custm_coords.size(1)
         self.num_depots   = self.depot_coords.size(1)
         self.num_vehicles = self.vehicle_cap.size(1)
-        self.num_nodes    = self.num_locs + self.num_depots
+        self.num_nodes    = self.num_custms + self.num_depots
         self.wait_time    = torch.FloatTensor([input["wait_time"]]).to(device)
         self.time_horizon = torch.FloatTensor([input["time_horizon"]]).to(device)
         self.speed        = V_COEF * (torch.FloatTensor([input["vehicle_speed"]]).to(device) / input["grid_scale"]).squeeze(-1) # [batch_size x 1] -> [batch_size]
-        self.max_cap      = torch.max(torch.tensor([torch.max(self.loc_cap).item(), torch.max(self.vehicle_cap).item()])).to(device) 
+        self.max_cap      = torch.max(torch.tensor([torch.max(self.custm_cap).item(), torch.max(self.vehicle_cap).item()])).to(device) 
         self.device       = device
-        self.loc_min_battery = 0.0 # TODO
+        self.custm_min_battery = 0.0 # TODO
         depot_prepare_time = 0.17 # 10 mins
-        loc_prepare_time   = 0.5  # 30 mins
+        custm_prepare_time   = 0.5  # 30 mins
         self.pre_time_depot  = torch.FloatTensor([depot_prepare_time]).to(device)
         self.post_time_depot = torch.FloatTensor([depot_prepare_time]).to(device)
-        self.post_time_loc   = torch.FloatTensor([loc_prepare_time]).to(device)
-        self.pre_time_loc    = torch.FloatTensor([loc_prepare_time]).to(device)
+        self.post_time_custm   = torch.FloatTensor([custm_prepare_time]).to(device)
+        self.pre_time_custm    = torch.FloatTensor([custm_prepare_time]).to(device)
         self.return_depot_within_time_horizon = False
         
         #-------
         # utils
         #-------
-        self.loc_arange_idx     = torch.arange(self.num_locs).to(self.device).unsqueeze(0).expand(self.batch_size, -1)
-        self.depot_arange_idx   = torch.arange(self.num_locs, self.num_nodes).to(self.device).unsqueeze(0).expand(self.batch_size, -1)
+        self.custm_arange_idx     = torch.arange(self.num_custms).to(self.device).unsqueeze(0).expand(self.batch_size, -1)
+        self.depot_arange_idx   = torch.arange(self.num_custms, self.num_nodes).to(self.device).unsqueeze(0).expand(self.batch_size, -1)
         self.node_arange_idx    = torch.arange(self.num_nodes).to(self.device).unsqueeze(0).expand(self.batch_size, -1)
         self.vehicle_arange_idx = torch.arange(self.num_vehicles).to(self.device).unsqueeze(0).expand(self.batch_size, -1)
         
         #----------------------
         # common dynamic state
         #----------------------
-        self.next_vehicle_id = torch.zeros(self.batch_size, dtype=torch.long, device=device) # firstly allocate 0-th vehicles
+        self.next_vehicle_id = torch.zeros(self.batch_size, dtype=torch.long, device=device) # firstly alcustmate 0-th vehicles
         self.skip = torch.full((self.batch_size,), False, dtype=bool, device=device) # [batch_size]
         self.end  = torch.full((self.batch_size,), False, dtype=bool, device=device) # [batch_size]
         self.current_time = torch.zeros(self.batch_size, dtype=torch.float, device=device) # [bath_size]
         self.tour_length = torch.zeros(self.batch_size, dtype=torch.float, device=device) # [batch_size]
-        self.penalty_empty_locs = torch.zeros(self.batch_size, dtype=torch.float, device=device) # [batch_size]
+        self.penalty_empty_custms = torch.zeros(self.batch_size, dtype=torch.float, device=device) # [batch_size]
         next_vehicle_mask = torch.arange(self.num_vehicles).to(self.device).unsqueeze(0).expand(self.batch_size, -1).eq(self.next_vehicle_id.unsqueeze(-1)) # [batch_size x num_vehicles]
         self.mask = self.update_mask(self.vehicle_position_id[next_vehicle_mask], next_vehicle_mask)
         self.charge_queue = torch.zeros((self.batch_size, self.num_depots, self.num_vehicles), dtype=torch.long, device=device)
@@ -212,7 +212,7 @@ class CIRPState(object):
         self.episode_step = 0
         if fname is not None:
             self.vehicle_batt_history = [[[] for __ in range(self.num_vehicles)] for _ in range(self.batch_size)]
-            self.loc_batt_history = [[[] for __ in range(self.num_locs)] for _ in range(self.batch_size)]
+            self.custm_batt_history = [[[] for __ in range(self.num_custms)] for _ in range(self.batch_size)]
             self.time_history = [[] for _ in range(self.batch_size)]
             self.down_history = [[] for _ in range(self.batch_size)]
             # visualize initial state
@@ -240,15 +240,15 @@ class CIRPState(object):
         ---------
         node_id: torch.Tensor [batch_size]:
         """
-        return node_id.ge(self.num_locs)
+        return node_id.ge(self.num_custms)
 
-    def get_loc_mask(self, node_id: torch.Tensor):
+    def get_custm_mask(self, node_id: torch.Tensor):
         """
         Paramters
         ---------
         node_id: torch.Tensor [batch_size]:
         """
-        return self.loc_arange_idx.eq(node_id.unsqueeze(-1))
+        return self.custm_arange_idx.eq(node_id.unsqueeze(-1))
 
     def get_depot_mask(self, node_id: torch.Tensor):
         """
@@ -309,36 +309,36 @@ class CIRPState(object):
         
         # pre/post-operation time
         at_depot = self.is_depot(next_node_id).unsqueeze(-1)
-        at_loc = ~at_depot
-        curr_vehicle_at_loc = curr_vehicle_mask & at_loc
+        at_custm = ~at_depot
+        curr_vehicle_at_custm = curr_vehicle_mask & at_custm
         curr_vehicle_at_depot = curr_vehicle_mask & at_depot
-        self.vehicle_pre_time  += curr_vehicle_at_loc * self.pre_time_loc + curr_vehicle_at_depot * self.pre_time_depot
-        self.vehicle_post_time += curr_vehicle_at_loc * self.post_time_loc + curr_vehicle_at_depot * self.post_time_depot
+        self.vehicle_pre_time  += curr_vehicle_at_custm * self.pre_time_custm + curr_vehicle_at_depot * self.pre_time_depot
+        self.vehicle_post_time += curr_vehicle_at_custm * self.post_time_custm + curr_vehicle_at_depot * self.post_time_depot
         
         # charge/supply time
-        destination_loc_mask = self.get_loc_mask(next_node_id) # [batch_size x num_locs]
+        destination_custm_mask = self.get_custm_mask(next_node_id) # [batch_size x num_custms]
         #-------------------------------------
-        # supplying time (visiting locations)
+        # supplying time (visiting custmations)
         #-------------------------------------
         unavail_depots = self.get_unavail_depots2(next_node_id).unsqueeze(-1).expand_as(self.depot_coords)
         depot_coords = self.depot_coords + 1e+6 * unavail_depots
-        loc2depot_min = COEF * torch.linalg.norm(self.get_coordinates(next_node_id).unsqueeze(1) - depot_coords, dim=-1).min(-1)[0] # [batch_size] 
-        discharge_lim = torch.maximum(loc2depot_min.unsqueeze(-1) * self.vehicle_consump_rate, self.vehicle_discharge_lim) # [batch_size x num_vehicles]
+        custm2depot_min = COEF * torch.linalg.norm(self.get_coordinates(next_node_id).unsqueeze(1) - depot_coords, dim=-1).min(-1)[0] # [batch_size] 
+        discharge_lim = torch.maximum(custm2depot_min.unsqueeze(-1) * self.vehicle_consump_rate, self.vehicle_discharge_lim) # [batch_size x num_vehicles]
         veh_discharge_lim = (self.vehicle_curr_battery - (travel_distance.unsqueeze(-1) * self.vehicle_consump_rate) - discharge_lim).clamp(0.0)
-        demand_on_arrival = torch.minimum(((self.loc_cap - (self.loc_curr_battery - self.loc_consump_rate * (travel_time.unsqueeze(-1) + self.pre_time_loc)).clamp(0.0)) * destination_loc_mask).sum(-1, keepdim=True), 
+        demand_on_arrival = torch.minimum(((self.custm_cap - (self.custm_curr_battery - self.custm_consump_rate * (travel_time.unsqueeze(-1) + self.pre_time_custm)).clamp(0.0)) * destination_custm_mask).sum(-1, keepdim=True), 
                                             veh_discharge_lim) # [batch_size x num_vehicles]
         # split supplying TODO: need clippling ?
-        charge_time_tmp = demand_on_arrival / (self.vehicle_discharge_rate - (self.loc_consump_rate * destination_loc_mask).sum(-1, keepdim=True)) # [batch_sizee x num_vehicles]
+        charge_time_tmp = demand_on_arrival / (self.vehicle_discharge_rate - (self.custm_consump_rate * destination_custm_mask).sum(-1, keepdim=True)) # [batch_sizee x num_vehicles]
         cannot_supplly_full = ((veh_discharge_lim - charge_time_tmp * self.vehicle_discharge_rate) < 0.0) # [batch_size x num_vehicles]
-        next_vehicles_sd  = curr_vehicle_at_loc & cannot_supplly_full  # vehicles that do split-delivery [batch_size x num_vehicles]
-        next_vehicles_nsd = curr_vehicle_at_loc & ~cannot_supplly_full # vehicles that do not split-delivery [batch_size x num_vehicles]
+        next_vehicles_sd  = curr_vehicle_at_custm & cannot_supplly_full  # vehicles that do split-delivery [batch_size x num_vehicles]
+        next_vehicles_nsd = curr_vehicle_at_custm & ~cannot_supplly_full # vehicles that do not split-delivery [batch_size x num_vehicles]
         charge_time = (charge_time_tmp * next_vehicles_nsd).sum(-1) # [batch_size]
         charge_time += ((veh_discharge_lim / self.vehicle_discharge_rate) * next_vehicles_sd).sum(-1) # [batch_size]
         #---------------------------------
         # charging time (visiting depots)
         #---------------------------------
         curr_depot_mask = self.get_depot_mask(next_node_id) # [batch_size x num_depots]
-        charge_time += (((self.vehicle_cap - (self.vehicle_curr_battery - (travel_distance.unsqueeze(-1) * self.vehicle_consump_rate)).clamp(0.0)) / ((self.depot_discharge_rate * curr_depot_mask).sum(-1, keepdim=True) + SMALL_VALUE)) * curr_vehicle_at_depot).sum(-1) # charge time for split supplying (loc will not be fully [charged)
+        charge_time += (((self.vehicle_cap - (self.vehicle_curr_battery - (travel_distance.unsqueeze(-1) * self.vehicle_consump_rate)).clamp(0.0)) / ((self.depot_discharge_rate * curr_depot_mask).sum(-1, keepdim=True) + SMALL_VALUE)) * curr_vehicle_at_depot).sum(-1) # charge time for split supplying (custm will not be fully [charged)
         #--------------------------------------------------------
         # update unavail_time (charge_time) of selected vehicles
         #--------------------------------------------------------
@@ -421,17 +421,17 @@ class CIRPState(object):
         #-----------------------------
         queued_vehicles = self.charge_queue.sum(1) > 1 # [batch_size x num_vehicles]
         charging_vehicles = charge_phase_vehicles & at_depot & update_batch.unsqueeze(-1) & ~queued_vehicles # [batch_size x num_vehicles]
-        charging_vehicle_position_idx = (self.vehicle_position_id - self.num_locs) * charging_vehicles.long()
+        charging_vehicle_position_idx = (self.vehicle_position_id - self.num_custms) * charging_vehicles.long()
         self.vehicle_curr_battery += self.depot_discharge_rate.gather(-1, charging_vehicle_position_idx) * elapsed_time.unsqueeze(-1) * charging_vehicles.float() # [batch_size x num_vehicles]
         #---------------------------------
-        # supplying (vehicle -> location)
+        # supplying (vehicle -> custmation)
         #---------------------------------
         supplying_vehicles = charge_phase_vehicles & ~at_depot & update_batch.unsqueeze(-1) # [batch_size x num_vehicles]
-        # location battery charge
-        # NOTE: In locs where a vehicle is staying, the battery of the locs incrases by loc_consump_rate * elapsed_time, not vehicle_discarge_rate * elasped_time.
-        # However, as the battery of the locs should be full when a vehicle is staying and it is clamped by max_cap later, we ignore this mismatch here.
+        # custmation battery charge
+        # NOTE: In custms where a vehicle is staying, the battery of the custms incrases by custm_consump_rate * elapsed_time, not vehicle_discarge_rate * elasped_time.
+        # However, as the battery of the custms should be full when a vehicle is staying and it is clamped by max_cap later, we ignore this mismatch here.
         supplying_vehicle_position_idx = self.vehicle_position_id * supplying_vehicles.long() # [batch_size x num_vehicles]
-        self.loc_curr_battery.scatter_reduce_(-1, 
+        self.custm_curr_battery.scatter_reduce_(-1, 
                                                 supplying_vehicle_position_idx, 
                                                 self.vehicle_discharge_rate * elapsed_time.unsqueeze(-1) * supplying_vehicles.float(), 
                                                 reduce="sum")
@@ -442,32 +442,32 @@ class CIRPState(object):
         # waiting
         supplying_wait_vehicles = supplying_vehicles & self.wait_vehicle
         supplying_vehicle_position_idx_ = self.vehicle_position_id * supplying_wait_vehicles.long()
-        self.vehicle_curr_battery -= self.loc_consump_rate.gather(-1, supplying_vehicle_position_idx_) * elapsed_time.unsqueeze(-1) * (supplying_wait_vehicles).float() # [batch_size x num_vehicles]
+        self.vehicle_curr_battery -= self.custm_consump_rate.gather(-1, supplying_vehicle_position_idx_) * elapsed_time.unsqueeze(-1) * (supplying_wait_vehicles).float() # [batch_size x num_vehicles]
         
         #----------------------------------
-        # battery consumption of locations
+        # battery consumption of custmations
         #----------------------------------
-        self.loc_curr_battery -= self.loc_consump_rate * (elapsed_time * update_batch.float()).unsqueeze(-1)
+        self.custm_curr_battery -= self.custm_consump_rate * (elapsed_time * update_batch.float()).unsqueeze(-1)
         
         # TODO:
         # print(self.vehicle_curr_battery[self.vehicle_curr_battery<0])
-        # location battery is always greater (less) than 0 (capacity)
+        # custmation battery is always greater (less) than 0 (capacity)
         self.vehicle_curr_battery = self.vehicle_curr_battery.clamp(min=0.0)
         self.vehicle_curr_battery = self.vehicle_curr_battery.clamp(max=self.vehicle_cap)
 
         #----------------
         # update penalty
         #----------------
-        down_locs = (self.loc_curr_battery - self.loc_min_battery) <= 0.0 # SMALL_VALUE [batch_size x num_locs]
+        down_custms = (self.custm_curr_battery - self.custm_min_battery) <= 0.0 # SMALL_VALUE [batch_size x num_custms]
         # ignore penalty in skipped episodes
-        num_empty_locs = ((-self.loc_curr_battery + self.loc_min_battery) / self.loc_consump_rate) * down_locs * (~self.skip.unsqueeze(-1)) # [batch_size x num_locs]
-        # empty_locs = ((-self.loc_curr_battery + self.loc_min_battery)[down_locs] / self.loc_consump_rate[down_locs]) # 1d
-        # num_empty_locs = torch.zeros((self.batch_size, self.num_locs), dtype=torch.float, device=self.device).masked_scatter_(down_locs, empty_locs)
-        # num_empty_locs[self.skip] = 0.0 # ignore penalty in skipped episodes
-        self.penalty_empty_locs += num_empty_locs.sum(-1) * update_batch / self.num_locs # [batch_size]
-        # location battery is always greater (less) than minimum battery (capacity)
-        self.loc_curr_battery = self.loc_curr_battery.clamp(min=self.loc_min_battery)
-        self.loc_curr_battery = self.loc_curr_battery.clamp(max=self.loc_cap)
+        num_empty_custms = ((-self.custm_curr_battery + self.custm_min_battery) / self.custm_consump_rate) * down_custms * (~self.skip.unsqueeze(-1)) # [batch_size x num_custms]
+        # empty_custms = ((-self.custm_curr_battery + self.custm_min_battery)[down_custms] / self.custm_consump_rate[down_custms]) # 1d
+        # num_empty_custms = torch.zeros((self.batch_size, self.num_custms), dtype=torch.float, device=self.device).masked_scatter_(down_custms, empty_custms)
+        # num_empty_custms[self.skip] = 0.0 # ignore penalty in skipped episodes
+        self.penalty_empty_custms += num_empty_custms.sum(-1) * update_batch / self.num_custms # [batch_size]
+        # custmation battery is always greater (less) than minimum battery (capacity)
+        self.custm_curr_battery = self.custm_curr_battery.clamp(min=self.custm_min_battery)
+        self.custm_curr_battery = self.custm_curr_battery.clamp(max=self.custm_cap)
 
         #---------------------
         # update unavail_time
@@ -569,8 +569,8 @@ class CIRPState(object):
         # mask 2: forbits vehicles to move between two different depots
         # i.e., if a selcted vechile is currently at a depot, it cannot visit other depots in the next step (but it can stay in the same depot)
         # self.mask_depot_to_other_depots(mask, next_node_id)
-        # mask 3: vehicles cannot visit a location/depot that other vehicles are visiting
-        self.mask_visited_locs(mask)
+        # mask 3: vehicles cannot visit a custmation/depot that other vehicles are visiting
+        self.mask_visited_custms(mask)
         # mask 4: forbit vehicles to visit depots that have small discharge rate
         self.remove_small_depots(mask, next_node_id)
         # mask 5: in skipped episodes(instances), the selcted vehicles always stay in the same place
@@ -579,7 +579,7 @@ class CIRPState(object):
 
     def return_to_depot_when_discharge_limit_rearched(self, mask, next_vehicle_mask):
         rearch_discharge_lim = (self.vehicle_curr_battery <= self.vehicle_discharge_lim + SMALL_VALUE)[next_vehicle_mask] # [batch_size]
-        mask[:, :self.num_locs] *= ~rearch_discharge_lim.unsqueeze(-1) # zero out all nodes in the sample where the selected EV rearches the discharge limit
+        mask[:, :self.num_custms] *= ~rearch_discharge_lim.unsqueeze(-1) # zero out all nodes in the sample where the selected EV rearches the discharge limit
 
     def mask_unreturnable_nodes(self, mask, next_node_id, next_vehicle_mask):
         """
@@ -592,35 +592,35 @@ class CIRPState(object):
         current_coord = torch.gather(self.coords, 1, next_node_id.view(-1, 1, 1).expand(-1, 1, self.coord_dim)) # [batch_size, 1, coord_dim]
         unavail_depots = self.small_depots.unsqueeze(-1).expand_as(self.depot_coords) # [batch_size x num_depots x coord_dim]
         depot_coords = self.depot_coords + 1e+6 * unavail_depots # set large value for removing small depots [batch_size x num_depots x coord_dim]
-        current_to_loc = COEF * torch.linalg.norm(self.loc_coords - current_coord, dim=-1) # [batch_size x num_locs]
-        loc_to_depot = COEF * torch.min(torch.cdist(self.loc_coords, depot_coords), -1)[0] # travel time b/w locs and the nearest depot [batch_size x num_locs]
-        current_to_loc_time = current_to_loc / self.speed.unsqueeze(-1)
-        loc_to_depot_time = loc_to_depot / self.speed.unsqueeze(-1)
-        wait_time = self.wait_time * (torch.abs(current_to_loc) < SMALL_VALUE) # [batch_size x num_locs]
+        current_to_custm = COEF * torch.linalg.norm(self.custm_coords - current_coord, dim=-1) # [batch_size x num_custms]
+        custm_to_depot = COEF * torch.min(torch.cdist(self.custm_coords, depot_coords), -1)[0] # travel time b/w custms and the nearest depot [batch_size x num_custms]
+        current_to_custm_time = current_to_custm / self.speed.unsqueeze(-1)
+        custm_to_depot_time = custm_to_depot / self.speed.unsqueeze(-1)
+        wait_time = self.wait_time * (torch.abs(current_to_custm) < SMALL_VALUE) # [batch_size x num_custms]
 
         #--------------------------------------------------------------------------------------------------------------
-        # vehicles can visit only locations that the vehicles can return to depots within time horizon after the visit
-        # i.e. travel time t_(current_node -> next_loc -> depot) + current_time <= time_horizon
+        # vehicles can visit only custmations that the vehicles can return to depots within time horizon after the visit
+        # i.e. travel time t_(current_node -> next_custm -> depot) + current_time <= time_horizon
         #--------------------------------------------------------------------------------------------------------------
-        # loc_charge_time should be wait_time not zero in the locations where a vehicle is waiting,
-        # but ignore that because those locations are masked out later 
-        runout_battery_loc = ((current_to_loc + loc_to_depot) * self.vehicle_consump_rate[next_vehicle_mask].unsqueeze(-1) # travel consumption
-                            #    + self.vehicle_discharge_rate[next_vehicle_mask].unsqueeze(-1) * loc_charge_time # supply consumption: curr_demand + loc_charge_time * self.loc_consump_rate
-                               + self.loc_consump_rate * wait_time # supply consumption when waiting
+        # custm_charge_time should be wait_time not zero in the custmations where a vehicle is waiting,
+        # but ignore that because those custmations are masked out later 
+        runout_battery_custm = ((current_to_custm + custm_to_depot) * self.vehicle_consump_rate[next_vehicle_mask].unsqueeze(-1) # travel consumption
+                            #    + self.vehicle_discharge_rate[next_vehicle_mask].unsqueeze(-1) * custm_charge_time # supply consumption: curr_demand + custm_charge_time * self.custm_consump_rate
+                               + self.custm_consump_rate * wait_time # supply consumption when waiting
                              ) > self.vehicle_curr_battery[next_vehicle_mask].unsqueeze(-1) + BIT_SMALL_VALUE
         
         # if its battery is zero, the vehicle should return to a depot (this is used only when vehicle_consump_rate = 0)
         battery_zero = torch.abs(self.vehicle_curr_battery[next_vehicle_mask]) < SMALL_VALUE # [batch_size]
-        # mask for unreturnable locations
-        unreturnable_loc = battery_zero.unsqueeze(-1) | runout_battery_loc # [batch_size x num_locs]
+        # mask for unreturnable custmations
+        unreturnable_custm = battery_zero.unsqueeze(-1) | runout_battery_custm # [batch_size x num_custms]
         if self.return_depot_within_time_horizon:
-            # ignore the battery change of visited locations (either way, they are masked out later)
-            loc_battery_on_arrival = (self.loc_curr_battery - self.loc_consump_rate * (current_to_loc_time + self.pre_time_loc)).clamp(self.loc_min_battery) # [batch_size x num_locs]
-            curr_demand = torch.minimum(self.loc_cap - loc_battery_on_arrival, self.vehicle_curr_battery[next_vehicle_mask].unsqueeze(-1)) # [batch_size x num_locs]
+            # ignore the battery change of visited custmations (either way, they are masked out later)
+            custm_battery_on_arrival = (self.custm_curr_battery - self.custm_consump_rate * (current_to_custm_time + self.pre_time_custm)).clamp(self.custm_min_battery) # [batch_size x num_custms]
+            curr_demand = torch.minimum(self.custm_cap - custm_battery_on_arrival, self.vehicle_curr_battery[next_vehicle_mask].unsqueeze(-1)) # [batch_size x num_custms]
             # time limit
-            loc_charge_time = curr_demand / (self.vehicle_discharge_rate[next_vehicle_mask].unsqueeze(-1) - self.loc_consump_rate) # [batch_size x num_locs]
-            exceed_timehorizon_loc = (current_to_loc_time + self.pre_time_loc + loc_charge_time + self.post_time_loc + loc_to_depot_time + wait_time).gt(remaining_time + BIT_SMALL_VALUE)
-            unreturnable_loc |= exceed_timehorizon_loc
+            custm_charge_time = curr_demand / (self.vehicle_discharge_rate[next_vehicle_mask].unsqueeze(-1) - self.custm_consump_rate) # [batch_size x num_custms]
+            exceed_timehorizon_custm = (current_to_custm_time + self.pre_time_custm + custm_charge_time + self.post_time_custm + custm_to_depot_time + wait_time).gt(remaining_time + BIT_SMALL_VALUE)
+            unreturnable_custm |= exceed_timehorizon_custm
         
         #---------------------------------------------------------------------------------------
         # vehicles can visit only depots that the vehicles can arrive there within time horizon
@@ -652,31 +652,31 @@ class CIRPState(object):
             i += 1
             if i >= len(atol_list):
                 print(self.depot_discharge_rate[all_zero.squeeze(-1)])
-                print(f"battery consumption b/w loc2depot: {(current_to_depot * self.vehicle_consump_rate[next_vehicle_mask].unsqueeze(-1))[all_zero.squeeze(-1)].tolist()}")
+                print(f"battery consumption b/w custm2depot: {(current_to_depot * self.vehicle_consump_rate[next_vehicle_mask].unsqueeze(-1))[all_zero.squeeze(-1)].tolist()}")
                 print(f"selected vehicle's battery: {self.vehicle_curr_battery[next_vehicle_mask].unsqueeze(-1)[all_zero].tolist()}")
                 print(torch.where(all_zero))
-                print(f"travel time b/w loc2depot: {current_to_depot_time[all_zero.squeeze(-1)].tolist()}")
+                print(f"travel time b/w custm2depot: {current_to_depot_time[all_zero.squeeze(-1)].tolist()}")
                 print(f"remaining time: {remaining_time[all_zero].tolist()}")
                 assert False, "some vehicles could not return to any depots within time horizon due to numerical error."
         
         #--------------------------
         # update unreturnable mask
         #--------------------------
-        unreturnable_mask = torch.cat((unreturnable_loc, unreturnable_depot), 1) # [batch_size x num_nodes]
+        unreturnable_mask = torch.cat((unreturnable_custm, unreturnable_depot), 1) # [batch_size x num_nodes]
         mask *= ~unreturnable_mask
     
-    def mask_visited_locs(self, mask: torch.Tensor):
+    def mask_visited_custms(self, mask: torch.Tensor):
         """
-        Remove visited locs from the next-node candidates
+        Remove visited custms from the next-node candidates
         
         Parameters
         ----------
         mask: torch.LongTensor [batch_size x num_nodes]
         """
-        reserved_loc = torch.full((self.batch_size, self.num_nodes), False, device=self.device)
-        reserved_loc.scatter_(1, self.vehicle_position_id, True)
-        reserved_loc[:, self.num_locs:] = False
-        mask *= ~reserved_loc
+        reserved_custm = torch.full((self.batch_size, self.num_nodes), False, device=self.device)
+        reserved_custm.scatter_(1, self.vehicle_position_id, True)
+        reserved_custm[:, self.num_custms:] = False
+        mask *= ~reserved_custm
 
     def mask_depot_to_other_depots(self, mask: torch.Tensor, next_node_id: torch.Tensor):
         """
@@ -687,9 +687,9 @@ class CIRPState(object):
         mask: torch.LongTesnor [batch_size x num_nodes]
         next_node_id: torch.LongTensor [batch_size]
         """
-        at_depot = next_node_id.ge(self.num_locs).unsqueeze(1) # [batch_size x 1]
+        at_depot = next_node_id.ge(self.num_custms).unsqueeze(1) # [batch_size x 1]
         other_depot = self.node_arange_idx.ne(next_node_id.unsqueeze(1)) # [batch_size x num_nodes]
-        other_depot[:, :self.num_locs] = False # ignore locations here
+        other_depot[:, :self.num_custms] = False # ignore custmations here
         mask *= ~(at_depot & other_depot)
 
     def remove_small_depots(self, mask: torch.Tensor, next_node_id: torch.Tensor):
@@ -697,7 +697,7 @@ class CIRPState(object):
         A mask for removing small depots, which have low discharge_rate
         """
         unavail_depots = self.get_unavail_depots(next_node_id) # [batch_size x num_depots]
-        unavail_nodes = torch.cat((torch.full((self.batch_size, self.num_locs), False).to(self.device), unavail_depots), -1) # [batch_size x num_nodes]
+        unavail_nodes = torch.cat((torch.full((self.batch_size, self.num_custms), False).to(self.device), unavail_depots), -1) # [batch_size x num_nodes]
         mask *= ~unavail_nodes
         return mask
     
@@ -724,18 +724,18 @@ class CIRPState(object):
         """
         visit_mask = torch.full((self.batch_size, self.num_nodes), 0.0, device=self.device)
         visit_mask.scatter_(1, self.vehicle_position_id, 1.0)
-        # for locations (loc_dim = 1+2+1+1+1+1 = 7)
-        loc_feats = torch.cat((
-            visit_mask[:, :self.num_locs, None], # visited by an EV?
-            self.loc_coords,  # [batch_size x num_locs x coord_dim]
-            self.loc_cap.unsqueeze(-1) / self.max_cap, # [batch_size x num_locs x 1]
-            self.loc_consump_rate.unsqueeze(-1) / self.max_cap, # [batch_size x num_locs x 1]
-            self.loc_curr_battery.unsqueeze(-1) / self.max_cap,  # [batch_size x num_locs x 1]
-            (self.loc_curr_battery / self.loc_consump_rate).unsqueeze(-1) # expected time to go down [batch_size x num_locs x 1]
+        # for custmations (custm_dim = 1+2+1+1+1+1 = 7)
+        custm_feats = torch.cat((
+            visit_mask[:, :self.num_custms, None], # visited by an EV?
+            self.custm_coords,  # [batch_size x num_custms x coord_dim]
+            self.custm_cap.unsqueeze(-1) / self.max_cap, # [batch_size x num_custms x 1]
+            self.custm_consump_rate.unsqueeze(-1) / self.max_cap, # [batch_size x num_custms x 1]
+            self.custm_curr_battery.unsqueeze(-1) / self.max_cap,  # [batch_size x num_custms x 1]
+            (self.custm_curr_battery / self.custm_consump_rate).unsqueeze(-1) # expected time to go down [batch_size x num_custms x 1]
         ), -1)
         # for depots (depot_dim = 1+2+1 = 4)
         depot_feats = torch.cat((
-            visit_mask[:, self.num_locs:, None], # visited by an EV?
+            visit_mask[:, self.num_custms:, None], # visited by an EV?
             self.depot_coords, # [batch_size x num_depots x coord_dim]
             self.depot_discharge_rate.unsqueeze(-1) / self.max_cap # [batch_size x num_depots x 1]
         ), -1)
@@ -752,14 +752,14 @@ class CIRPState(object):
         vehicle_feats = torch.cat((
             self.vehicle_cap.unsqueeze(-1) / self.max_cap, # [batch_size x num_vehicles] -> [batch_size x num_vehicles x 1]
             curr_vehicle_coords, # [batch_size x num_vehicles x coord_dim]
-            self.is_depot(self.vehicle_position_id).unsqueeze(-1).to(torch.float), # [batch_size x num_vehicles x 1] at {depot: 0, locations: 1}
+            self.is_depot(self.vehicle_position_id).unsqueeze(-1).to(torch.float), # [batch_size x num_vehicles x 1] at {depot: 0, custmations: 1}
             self.vehicle_phase.unsqueeze(-1) / self.phase_id_max, # [batch_size x num_vehicles] -> [batch_size x num_vehicles x 1] the phase of vehicles
             vehicle_phase_time, # remaining time of move, pre-operation, charge/supply, and post-operation [batch_size x num_vehicles x 4]
             vehicle_phase_time_sum, # / (vehicle_phase_time_sum.max(-1, keepdim=True)[0] + SMALL_VALUE), # total unavail time [batch_size x num_vehicles x 1]
             self.vehicle_curr_battery.unsqueeze(-1) / self.max_cap # [batch_size x num_vehicles x 1]
             # self.current_time[:, None, None].expand(-1, self.num_vehicles, 1) / self.time_horizon # [batch_size] -> [batch_size x num_vehicles x 1] 
         ), -1)
-        return loc_feats, depot_feats, vehicle_feats
+        return custm_feats, depot_feats, vehicle_feats
 
     def get_mask(self):
         """
@@ -788,14 +788,14 @@ class CIRPState(object):
     def get_rewards(self):
         # compute the last penalty
         # remaining_time = self.time_horizon - self.current_time # [batch_size]
-        # self.loc_curr_battery -= self.loc_consump_rate * remaining_time.unsqueeze(-1)
-        # down_locs = (self.loc_curr_battery - self.loc_min_battery) < SMALL_VALUE
-        # num_empty_locs = down_locs.count_nonzero(-1) * remaining_time # [batch_size]
-        # num_empty_locs = ((self.loc_curr_battery - self.loc_min_battery)[down_locs] / self.loc_consump_rate[down_locs]).sum(-1)
-        # num_empty_locs[self.skip] = 0 # ignore penalty in skipped episodes
-        # self.penalty_empty_locs += num_empty_locs / self.num_locs # [batch_size]
+        # self.custm_curr_battery -= self.custm_consump_rate * remaining_time.unsqueeze(-1)
+        # down_custms = (self.custm_curr_battery - self.custm_min_battery) < SMALL_VALUE
+        # num_empty_custms = down_custms.count_nonzero(-1) * remaining_time # [batch_size]
+        # num_empty_custms = ((self.custm_curr_battery - self.custm_min_battery)[down_custms] / self.custm_consump_rate[down_custms]).sum(-1)
+        # num_empty_custms[self.skip] = 0 # ignore penalty in skipped episodes
+        # self.penalty_empty_custms += num_empty_custms / self.num_custms # [batch_size]
         # normalization
-        penalty = self.penalty_empty_locs / self.time_horizon
+        penalty = self.penalty_empty_custms / self.time_horizon
         tour_length = self.tour_length / self.num_vehicles
         return {"tour_length": tour_length, "penalty": penalty}
 
@@ -807,8 +807,8 @@ class CIRPState(object):
                 self.visualize_state(batch, 
                                     self.current_time[batch].item(), 
                                     self.vehicle_curr_battery[batch], 
-                                    self.loc_curr_battery[batch], 
-                                    ((self.loc_curr_battery[batch] - self.loc_min_battery) <= 0.0).sum().item(),
+                                    self.custm_curr_battery[batch], 
+                                    ((self.custm_curr_battery[batch] - self.custm_min_battery) <= 0.0).sum().item(),
                                     self.vehicle_unavail_time[batch])
         else:
             for batch in range(1):
@@ -817,8 +817,8 @@ class CIRPState(object):
                 prev_time      = self.time_history[batch][-1]
                 curr_time      = self.current_time[batch].item()
                 prev_veh_batt  = copy.deepcopy(self.vehicle_batt_history[batch])
-                prev_loc_batt  = copy.deepcopy(self.loc_batt_history[batch])
-                prev_down_locs = self.down_history[batch][-1]
+                prev_custm_batt  = copy.deepcopy(self.custm_batt_history[batch])
+                prev_down_custms = self.down_history[batch][-1]
                 curr_veh_unavail_time = self.vehicle_unavail_time[batch].clamp(0.0).detach().clone()
                 time_interval  = curr_time - prev_time
                 dts = np.arange(OUTPUT_INTERVAL, time_interval, OUTPUT_INTERVAL).tolist()
@@ -835,20 +835,20 @@ class CIRPState(object):
                         interpolate_line(prev_veh_batt[vehicle_id][-1], self.vehicle_curr_battery[batch][vehicle_id].item(), ratio)
                         for vehicle_id in range(self.num_vehicles)
                     ]) # [num_vehicles]
-                    curr_loc_batt = torch.tensor([
-                        interpolate_line(prev_loc_batt[loc_id][-1], self.loc_curr_battery[batch][loc_id].item(), ratio) 
-                        for loc_id in range(self.num_locs)
-                    ]) # [num_locs]
-                    curr_down_locs = interpolate_line(prev_down_locs, ((self.loc_curr_battery[batch] - self.loc_min_battery) <= 0.0).sum().item(), ratio) # [1]
+                    curr_custm_batt = torch.tensor([
+                        interpolate_line(prev_custm_batt[custm_id][-1], self.custm_curr_battery[batch][custm_id].item(), ratio) 
+                        for custm_id in range(self.num_custms)
+                    ]) # [num_custms]
+                    curr_down_custms = interpolate_line(prev_down_custms, ((self.custm_curr_battery[batch] - self.custm_min_battery) <= 0.0).sum().item(), ratio) # [1]
                     veh_unavail_time = curr_veh_unavail_time + (time_interval - dt)
-                    self.visualize_state(batch, prev_time + dt, curr_veh_batt, curr_loc_batt, curr_down_locs, veh_unavail_time)
+                    self.visualize_state(batch, prev_time + dt, curr_veh_batt, curr_custm_batt, curr_down_custms, veh_unavail_time)
 
     def visualize_state(self, 
                         batch: int, 
                         curr_time: float,
                         curr_veh_batt: torch.FloatTensor,
-                        curr_loc_batt: torch.FloatTensor,
-                        curr_down_locs: float,
+                        curr_custm_batt: torch.FloatTensor,
+                        curr_down_custms: float,
                         veh_unavail_time: torch.FloatTensor) -> None:
         #-----------------
         # battery history
@@ -856,9 +856,9 @@ class CIRPState(object):
         self.time_history[batch].append(curr_time)
         for vehicle_id in range(self.num_vehicles):
             self.vehicle_batt_history[batch][vehicle_id].append(curr_veh_batt[vehicle_id].item())
-        for loc_id in range(self.num_locs):
-            self.loc_batt_history[batch][loc_id].append(curr_loc_batt[loc_id].item())
-        self.down_history[batch].append(curr_down_locs)
+        for custm_id in range(self.num_custms):
+            self.custm_batt_history[batch][custm_id].append(curr_custm_batt[custm_id].item())
+        self.down_history[batch].append(curr_down_custms)
 
         #---------------
         # visualziation
@@ -868,19 +868,19 @@ class CIRPState(object):
             gs = fig.add_gridspec(ncols=2, nrows=3, width_ratios=[1, 1.5])
             ax = fig.add_subplot(gs[:, 1])
             # current state
-            loc_battery = torch2numpy(curr_loc_batt)         # [num_locs]
+            custm_battery = torch2numpy(curr_custm_batt)         # [num_custms]
             vehicle_battery = torch2numpy(curr_veh_batt) # [num_vehicles]
-            loc_cap = torch2numpy(self.loc_cap[batch])                      # [num_locs]
-            loc_coords = torch2numpy(self.loc_coords[batch])                # [num_locs x coord_dim]
+            custm_cap = torch2numpy(self.custm_cap[batch])                      # [num_custms]
+            custm_coords = torch2numpy(self.custm_coords[batch])                # [num_custms x coord_dim]
             depot_coords = torch2numpy(self.depot_coords[batch])            # [num_depots x coord_dim]
-            coords = np.concatenate((loc_coords, depot_coords), 0)          # [num_nodes x coord_dim]
+            coords = np.concatenate((custm_coords, depot_coords), 0)          # [num_nodes x coord_dim]
             vehicle_cap = torch2numpy(self.vehicle_cap[batch])              # [num_vehicles]
-            x_loc = loc_coords[:, 0]; y_loc = loc_coords[:, 1]
+            x_custm = custm_coords[:, 0]; y_custm = custm_coords[:, 1]
             x_depot = depot_coords[:, 0]; y_depot = depot_coords[:, 1]
             # visualize nodes
-            for id in range(self.num_locs):
-                ratio = loc_battery[id] / loc_cap[id]
-                add_base(x_loc[id], y_loc[id], ratio, ax)
+            for id in range(self.num_custms):
+                ratio = custm_battery[id] / custm_cap[id]
+                add_base(x_custm[id], y_custm[id], ratio, ax)
             ax.scatter(x_depot, y_depot, marker="*", c="black", s=200, zorder=3)
             # visualize vehicles
             cmap = get_cmap(self.num_vehicles)
@@ -912,8 +912,8 @@ class CIRPState(object):
             #----------------------------
             time_horizon = self.time_horizon.cpu().item()
             max_veh_batt = torch.ceil(self.vehicle_cap[batch].max() / 10).cpu().item() * 10
-            max_loc_batt = torch.ceil(self.loc_cap[batch].max() / 10).cpu().item() * 10
-            max_num_locs = math.ceil(self.num_locs / 10) * 10
+            max_custm_batt = torch.ceil(self.custm_cap[batch].max() / 10).cpu().item() * 10
+            max_num_custms = math.ceil(self.num_custms / 10) * 10
             # EV battery history
             ax_ev = fig.add_subplot(gs[0, 0])
             for vehicle_id in range(self.num_vehicles):
@@ -925,10 +925,10 @@ class CIRPState(object):
             ax_ev.set_ylabel("EV battery (kWh)", fontsize=18)
             # Base station battery history
             ax_base = fig.add_subplot(gs[1, 0])
-            for loc_id in range(self.num_locs):
-                ax_base.plot(self.time_history[batch], list(self.loc_batt_history[batch][loc_id]), alpha=0.7)
+            for custm_id in range(self.num_custms):
+                ax_base.plot(self.time_history[batch], list(self.custm_batt_history[batch][custm_id]), alpha=0.7)
             ax_base.set_xlim(0, time_horizon)
-            ax_base.set_ylim(0, max_loc_batt)
+            ax_base.set_ylim(0, max_custm_batt)
             ax_base.get_xaxis().set_visible(False)
             ax_base.axvline(x=self.time_history[batch][-1], ymin=-1.2, ymax=1, c="black", lw=1.5, zorder=0, clip_on=False)
             ax_base.set_ylabel("Base station battery (kWh)", fontsize=18)
@@ -936,7 +936,7 @@ class CIRPState(object):
             ax_down = fig.add_subplot(gs[2, 0])
             ax_down.plot(self.time_history[batch], self.down_history[batch])
             ax_down.set_xlim(0, time_horizon)
-            ax_down.set_ylim(0, max_num_locs)
+            ax_down.set_ylim(0, max_num_custms)
             ax_down.axvline(x=self.time_history[batch][-1], ymin=0, ymax=1, c="black", lw=1.5, zorder=0, clip_on=False)
             ax_down.set_xlabel("Time (h)", fontsize=18)
             ax_down.set_ylabel("# downed base stations", fontsize=18)
@@ -963,8 +963,8 @@ class CIRPState(object):
         ax3 = fig.add_subplot(313)
         for vehicle_id in range(self.num_vehicles):
             ax1.plot(self.time_history[batch], list(self.vehicle_batt_history[batch][vehicle_id]))
-        for loc_id in range(self.num_locs):
-            ax2.plot(self.time_history[batch], list(self.loc_batt_history[batch][loc_id]))
+        for custm_id in range(self.num_custms):
+            ax2.plot(self.time_history[batch], list(self.custm_batt_history[batch][custm_id]))
         ax3.plot(self.time_history[batch], self.down_history[batch])
         ax1.set_xlabel("Time (h)")
         ax1.set_ylabel("EVs' battery (KW)")
@@ -979,8 +979,8 @@ class CIRPState(object):
         hisotry_data = {
             "time": self.time_history[batch],
             "veh_batt": self.vehicle_batt_history[batch],
-            "loc_batt": self.loc_batt_history[batch],
-            "down_loc": self.down_history[batch]
+            "custm_batt": self.custm_batt_history[batch],
+            "down_custm": self.down_history[batch]
         }
         with open(f"{self.fname}-sample{batch}/history_data.pkl", "wb") as f:
             pickle.dump(hisotry_data, f)

@@ -65,7 +65,7 @@ def eval(dataset_path: str,
         params = argparse.ArgumentParser()
         with open(f"{model_dir}/cmd_args.dat", "r") as f:
             params.__dict__ = json.load(f)
-        model = AM4CIRP(loc_dim=params.loc_dim,
+        model = AM4CIRP(custm_dim=params.custm_dim,
                         depot_dim=params.depot_dim,
                         vehicle_dim=params.vehicle_dim,
                         emb_dim=params.emb_dim,
@@ -122,7 +122,7 @@ def eval(dataset_path: str,
         calc_time_list.append(time.perf_counter() - start_time)
         tour_length_list.append(cost_dict["tour_length"])
         down_list.append(cost_dict["penalty"])
-        num_down_list.append(cost_dict["penalty"] * batch["loc_coords"].size(1))
+        num_down_list.append(cost_dict["penalty"] * batch["custm_coords"].size(1))
         actual_tour_length_list.append(cost_dict["tour_length"] * batch["grid_scale"].squeeze(-1))
         
         #---------------

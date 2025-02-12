@@ -29,23 +29,23 @@ class ClusteringBase(nn.Module):
         -------
         div_input: list of dict of torch.tensor
         """
-        num_locs     = len(input["loc_coords"])
+        num_custms     = len(input["custm_coords"])
         veh_init_postion_id = input["vehicle_initial_position_id"]
         num_vehicles = len(veh_init_postion_id)
         num_clusters = num_vehicles
         unique_pos_ids = torch.unique(veh_init_postion_id)
 
         # clustering
-        div_loc_id_tmp, div_depot_id_tmp = self.clustering(input, num_clusters, unique_pos_ids)
+        div_custm_id_tmp, div_depot_id_tmp = self.clustering(input, num_clusters, unique_pos_ids)
 
         # merge clusters that have the same initial depot (veh_init_position_id)
         if self.merge_duplicated_depots:
-            div_loc_id = []
+            div_custm_id = []
             div_depot_id = []
             div_veh_id = []
             for unique_pos_id in unique_pos_ids:
                 merge_indicies = torch.where(veh_init_postion_id == unique_pos_id)[0]
-                div_loc_id.append(torch.cat([div_loc_id_tmp[merge_idx.item()] for merge_idx in merge_indicies]))
+                div_custm_id.append(torch.cat([div_custm_id_tmp[merge_idx.item()] for merge_idx in merge_indicies]))
                 merge_depot_id_list = [div_depot_id_tmp[merge_idx.item()] for merge_idx in merge_indicies if div_depot_id_tmp[merge_idx.item()].size()[0] > 0]
                 if len(merge_depot_id_list) > 0:
                     div_depot_id.append(torch.cat([torch.cat(merge_depot_id_list), unique_pos_id[None]]))
@@ -53,7 +53,7 @@ class ClusteringBase(nn.Module):
                     div_depot_id.append(merge_depot_id_list[0])
                 div_veh_id.append(merge_indicies)
         else:
-            div_loc_id = div_loc_id_tmp
+            div_custm_id = div_custm_id_tmp
             div_depot_id = div_depot_id_tmp
             div_veh_id = [torch.tensor([i]) for i in range(num_vehicles)]
 
@@ -62,10 +62,10 @@ class ClusteringBase(nn.Module):
         for i in range(len(div_veh_id)):
             div_input = {}
             for key, value in input.items():
-                if "loc" in key:
-                    div_input[key] = value[div_loc_id[i]]
+                if "custm" in key:
+                    div_input[key] = value[div_custm_id[i]]
                 elif "depot" in key:
-                    div_input[key] = value[div_depot_id[i] - num_locs]
+                    div_input[key] = value[div_depot_id[i] - num_custms]
                 elif "vehicle" in key:
                     if key == "vehicle_initial_position_id":
                         cond = torch.full((len(div_depot_id[i]),), False)
@@ -73,7 +73,7 @@ class ClusteringBase(nn.Module):
                         for depot_id in depot_ids:
                             cond |= (div_depot_id[i] == depot_id)
                         offst_depot_ids = torch.where(cond)[0]
-                        div_input[key] = offst_depot_ids + len(div_loc_id[i])
+                        div_input[key] = offst_depot_ids + len(div_custm_id[i])
                     else:
                         div_input[key] = value[div_veh_id[i]]
                 else:
@@ -82,7 +82,7 @@ class ClusteringBase(nn.Module):
 
         # print summary
         print(f"The original problem was split into {len(div_inputs)} sub-problem(s)!")
-        return div_inputs, div_loc_id, div_depot_id, div_veh_id
+        return div_inputs, div_custm_id, div_depot_id, div_veh_id
 
     def clustering(self, num_clusters, unique_pos_ids):
         NotImplementedError
@@ -99,16 +99,16 @@ class KmeansClustering(ClusteringBase):
                    input: Dict[str, torch.tensor],
                    num_clusters: int,
                    unique_pos_ids: torch.tensor) -> tuple:
-        # clustering locs
-        loc_coords = input["loc_coords"].cpu().detach().numpy().copy()
-        num_locs = len(loc_coords)
-        # num_locs < num_culsters is not supported 
-        loc_cluster_ids, loc_cluster_centers = self.balanced_kmeans(loc_coords, num_clusters)
+        # clustering custms
+        custm_coords = input["custm_coords"].cpu().detach().numpy().copy()
+        num_custms = len(custm_coords)
+        # num_custms < num_culsters is not supported 
+        custm_cluster_ids, custm_cluster_centers = self.balanced_kmeans(custm_coords, num_clusters)
 
         # clustering depots except for depots from which EVs depart
         depot_coords = input["depot_coords"] # .cpu().detach().numpy().copy()
         depot_id = torch.arange(len(depot_coords))
-        remove_mask = torch.isin(depot_id, unique_pos_ids-num_locs) # [num_depots]
+        remove_mask = torch.isin(depot_id, unique_pos_ids-num_custms) # [num_depots]
         clustered_depot_id = depot_id[~remove_mask]
         clustered_depot_coords = depot_coords[~remove_mask].cpu().detach().numpy().copy()
         # len(clustered_depot_coords) < num_culsters is not supported
@@ -116,17 +116,17 @@ class KmeansClustering(ClusteringBase):
         
         # matching
         veh_init_pos_ids = input["vehicle_initial_position_id"]
-        veh_init_pos = depot_coords[veh_init_pos_ids-num_locs].cpu().detach().numpy().copy() # [num_clusters(vehicles), dim]
-        # match the inital charge station with a cluster of locs
-        loc_pairs = self.cluster_matching(veh_init_pos, loc_cluster_centers)
-        # match the inital charge station with a cluster of locs
+        veh_init_pos = depot_coords[veh_init_pos_ids-num_custms].cpu().detach().numpy().copy() # [num_clusters(vehicles), dim]
+        # match the inital charge station with a cluster of custms
+        custm_pairs = self.cluster_matching(veh_init_pos, custm_cluster_centers)
+        # match the inital charge station with a cluster of custms
         depot_pairs = self.cluster_matching(veh_init_pos, depot_cluster_centers)
         
-        div_loc_id = []; div_depot_id = []
+        div_custm_id = []; div_depot_id = []
         for cluster_id in range(num_clusters):
-            div_loc_id.append(torch.tensor(loc_cluster_ids[loc_pairs[cluster_id][1]]))
-            div_depot_id.append(clustered_depot_id[depot_cluster_ids[depot_pairs[cluster_id][1]]] + num_locs)
-        return div_loc_id, div_depot_id
+            div_custm_id.append(torch.tensor(custm_cluster_ids[custm_pairs[cluster_id][1]]))
+            div_depot_id.append(clustered_depot_id[depot_cluster_ids[depot_pairs[cluster_id][1]]] + num_custms)
+        return div_custm_id, div_depot_id
 
     def balanced_kmeans(self, x, num_clusters, max_iters=1000):
         """
@@ -201,20 +201,20 @@ class RandomClustering(ClusteringBase):
         self.num_clusters = num_clusters
 
     def clustering(self, input, num_clusters, unique_pos_ids):
-        # shuffle & split locs
-        num_locs = len(input["loc_coords"])
-        suffled_loc_id = torch.randperm(num_locs)
-        div_loc_id = []
+        # shuffle & split custms
+        num_custms = len(input["custm_coords"])
+        suffled_custm_id = torch.randperm(num_custms)
+        div_custm_id = []
         st = 0; ed = 0
         for i in range(num_clusters):
-            ed = st + (num_locs + i) // num_clusters
-            div_loc_id.append(suffled_loc_id[st:ed]) 
+            ed = st + (num_custms + i) // num_clusters
+            div_custm_id.append(suffled_custm_id[st:ed]) 
             st = ed
 
         # shuffle & split depots
         div_depot_id = []
         num_depots = len(input["depot_coords"])
-        shuffled_depot_id = torch.randperm(num_depots) + num_locs
+        shuffled_depot_id = torch.randperm(num_depots) + num_custms
         shuffled_depot_id = shuffled_depot_id[~torch.isin(shuffled_depot_id, unique_pos_ids)] # remove unique_pos_ids
         num_div_depots = len(shuffled_depot_id) # num_depots - num_clusters
         st = 0; ed = 0
@@ -223,7 +223,7 @@ class RandomClustering(ClusteringBase):
             div_depot_id.append(shuffled_depot_id[st:ed])
             st = ed
         
-        return div_loc_id, div_depot_id 
+        return div_custm_id, div_depot_id 
 
 class CP4ClusteredTSN():
     def __init__(self,
@@ -231,7 +231,7 @@ class CP4ClusteredTSN():
                  cluster_type: str = "kmeans",
                  merge_duplicated_depots: bool = False,
                  parallel: bool = True,
-                 num_cpus: int = 4,
+                 num_cpus: int = 8,
                  *args, **kwargs):
         self.cp4tsn = CP4TSN(*args, **kwargs)
         self.num_division = num_clusters
@@ -260,11 +260,11 @@ class CP4ClusteredTSN():
         calc_time: float
         """
         # parameters 
-        num_locs = len(input["loc_coords"])
+        num_custms = len(input["custm_coords"])
         num_vehicles = len(input["vehicle_cap"])
 
         # split problem into subproblems
-        div_inputs, div_loc_id, div_depot_id, div_veh_id = self.clustering(input)
+        div_inputs, div_custm_id, div_depot_id, div_veh_id = self.clustering(input)
 
         # solve sub-problems
         start_time = time.perf_counter()
@@ -279,12 +279,12 @@ class CP4ClusteredTSN():
 
         # merge results
         total_route_length = 0
-        num_down_locs = np.zeros(self.cp4tsn.T)
+        num_down_custms = np.zeros(self.cp4tsn.T)
         for result in results:
             total_route_length += result["total_route_length"]
-            num_down_locs += np.array(result["num_down_locs"])
-        num_down = np.mean(num_down_locs)
-        down_rate = num_down / num_locs
+            num_down_custms += np.array(result["num_down_custms"])
+        num_down = np.mean(num_down_custms)
+        down_rate = num_down / num_custms
         objective_value = total_route_length / num_vehicles + self.cp4tsn.loss_coef * down_rate
         # print(f"calc_time = {calc_time}")
         # print(f"route_len = {total_route_length}")
@@ -312,7 +312,7 @@ class CP4ClusteredTSN():
         # save history
         history = {
             "time": np.arange(self.cp4tsn.T) * self.cp4tsn.dt,
-            "down_loc": num_down_locs.tolist()
+            "down_custm": num_down_custms.tolist()
         }
         with open(f"{dir_name}/batch0-sample0/history_data.pkl", "wb") as f:
             pickle.dump(history, f)

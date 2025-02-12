@@ -34,7 +34,7 @@ def main(args: argparse.Namespace) -> None:
                                              num_workers=args.num_workers)
 
     # model & optimizer
-    model = AM4CIRP(loc_dim=args.loc_dim,
+    model = AM4CIRP(custm_dim=args.custm_dim,
                     depot_dim=args.depot_dim, 
                     vehicle_dim=args.vehicle_dim,
                     emb_dim=args.emb_dim,
@@ -125,7 +125,7 @@ if __name__ == "__main__":
     parser.add_argument("--coord_dim",    type=int, default=2)
     parser.add_argument("--num_samples",  type=int, default=1)
     parser.add_argument("--num_depots",   type=int, default=1)
-    parser.add_argument("--num_locs",     type=int, default=20)
+    parser.add_argument("--num_custms",     type=int, default=20)
     parser.add_argument("--num_vehicles", type=int, default=3)
     parser.add_argument("--vehicle_cap",  type=int, default=10)
 
@@ -133,7 +133,7 @@ if __name__ == "__main__":
     # training settings
     #-------------------
     parser.add_argument("--batch_size",          type=int,   default=128)
-    parser.add_argument("--epochs",              type=int,   default=100)
+    parser.add_argument("--epochs",              type=int,   default=1)
     parser.add_argument("--log_interval",        type=int,   default=20)
     parser.add_argument("--checkpoint_interval", type=int,   default=1)
     parser.add_argument("--lr",                  type=float, default=1e-4)
@@ -146,7 +146,7 @@ if __name__ == "__main__":
     #----------------
     # model settings
     #----------------
-    parser.add_argument("--loc_dim",        type=int, default=7)
+    parser.add_argument("--custm_dim",        type=int, default=7)
     parser.add_argument("--depot_dim",      type=int, default=4)
     parser.add_argument("--vehicle_dim",    type=int, default=11)
     parser.add_argument("--emb_dim",        type=int, default=128)

@@ -65,13 +65,13 @@ def visualize_tour(dataset_path, tour_path, save_dir, instance, anim_type):
     tour = tours[instance]
 
     # node information
-    loc_coords = data["loc_coords"] # [num_locs x coord_dim]
+    custm_coords = data["custm_coords"] # [num_custms x coord_dim]
     depot_coords = data["depot_coords"] # [num_depots x coord_dim]
-    coords = torch.cat((loc_coords, depot_coords), 0) # [num_nodes x coord_dim]
-    x_loc = loc_coords[:, 0]; y_loc = loc_coords[:, 1]
+    coords = torch.cat((custm_coords, depot_coords), 0) # [num_nodes x coord_dim]
+    x_custm = custm_coords[:, 0]; y_custm = custm_coords[:, 1]
     x_depot = depot_coords[:, 0]; y_depot = depot_coords[:, 1]
 
-    num_locs      = len(x_loc)
+    num_custms      = len(x_custm)
     num_depots    = len(x_depot)
     num_vehicles  = len(tour)
     vehicle_steps = [0] * num_vehicles
@@ -83,9 +83,9 @@ def visualize_tour(dataset_path, tour_path, save_dir, instance, anim_type):
     finished = ["end" for _ in range(num_vehicles)]
     vehicle_visit = np.zeros((num_vehicles, 2, 2)) # stores x_curr, y_curr, x_next, y_next
     vehicle_max_steps = [len(tour[vehicle_id]) for vehicle_id in range(num_vehicles)]
-    loc_battery = data["loc_initial_battery"] # [num_locs]
-    loc_cap = data["loc_cap"] # [num_locs]
-    loc_consump_rate = data["loc_consump_rate"] # [num_locs]
+    custm_battery = data["custm_initial_battery"] # [num_custms]
+    custm_cap = data["custm_cap"] # [num_custms]
+    custm_consump_rate = data["custm_consump_rate"] # [num_custms]
     vehicle_discharge_rate = data["vehicle_discharge_rate"] # [num_vehicles]
     vehicle_position = np.zeros(num_vehicles).astype(int) # [num_vehicles]
     vehicle_battery = data["vehicle_cap"].clone() # [num_vehicles]
@@ -109,10 +109,10 @@ def visualize_tour(dataset_path, tour_path, save_dir, instance, anim_type):
     fig = plt.figure(figsize=(10, 10))
     ax = fig.add_subplot(111)
 
-    # add locations & depots
-    for id in range(num_locs):
-        ratio = loc_battery[id] / loc_cap[id]
-        add_base(x_loc[id], y_loc[id], ratio, ax)
+    # add custmations & depots
+    for id in range(num_custms):
+        ratio = custm_battery[id] / custm_cap[id]
+        add_base(x_custm[id], y_custm[id], ratio, ax)
     ax.scatter(x_depot, y_depot, marker="*", c="black", s=100, zorder=3)
 
     # initial vehicle assignment
@@ -159,29 +159,29 @@ def visualize_tour(dataset_path, tour_path, save_dir, instance, anim_type):
         fig = plt.figure(figsize=(10, 10))
         ax = fig.add_subplot(111)
 
-        # add locations & depots
-        charged_loc = []
+        # add custmations & depots
+        charged_custm = []
         for vehicle_id in range(num_vehicles):
-            loc_id = vehicle_position[vehicle_id]
-            at_loc = loc_id < num_locs
+            custm_id = vehicle_position[vehicle_id]
+            at_custm = custm_id < num_custms
             charging = vehicle_phase[vehicle_id] == "charge"
-            if at_loc & charging:
-                loc_battery[loc_id] += vehicle_discharge_rate[vehicle_id] * elapsed_time
+            if at_custm & charging:
+                custm_battery[custm_id] += vehicle_discharge_rate[vehicle_id] * elapsed_time
                 vehicle_battery[vehicle_id] -= vehicle_discharge_rate[vehicle_id] * elapsed_time
                 vehicle_battery[vehicle_id] = vehicle_battery[vehicle_id].clip(0.0)
-                ratio = loc_battery[loc_id] / loc_cap[loc_id]
-                add_base(x_loc[loc_id], y_loc[loc_id], ratio, ax)
-                charged_loc.append(loc_id)
-            if (not at_loc) & charging:
-                vehicle_battery[vehicle_id] += depot_discharge_rate[loc_id - num_locs] * elapsed_time
+                ratio = custm_battery[custm_id] / custm_cap[custm_id]
+                add_base(x_custm[custm_id], y_custm[custm_id], ratio, ax)
+                charged_custm.append(custm_id)
+            if (not at_custm) & charging:
+                vehicle_battery[vehicle_id] += depot_discharge_rate[custm_id - num_custms] * elapsed_time
 
-        for id in range(num_locs):
-            if not (id in charged_loc):
-                loc_battery[id] -= loc_consump_rate[id] * elapsed_time
-                loc_battery[id] = loc_battery[id].clamp(0.0)
-                ratio = loc_battery[id] / loc_cap[id]
-                add_base(x_loc[id], y_loc[id], ratio, ax)
-        # ax.scatter(x_loc, y_loc, marker="o", c="black", zorder=3)
+        for id in range(num_custms):
+            if not (id in charged_custm):
+                custm_battery[id] -= custm_consump_rate[id] * elapsed_time
+                custm_battery[id] = custm_battery[id].clamp(0.0)
+                ratio = custm_battery[id] / custm_cap[id]
+                add_base(x_custm[id], y_custm[id], ratio, ax)
+        # ax.scatter(x_custm, y_custm, marker="o", c="black", zorder=3)
         ax.scatter(x_depot, y_depot, marker="*", c="black", s=100, zorder=3)
 
         #-----------------------------------

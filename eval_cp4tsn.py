@@ -16,8 +16,8 @@ def main(args):
                                  dt=args.dt,
                                  vehicle_speed=args.vehicle_speed,
                                  loss_coef=args.loss_coef,
-                                 loc_pre_time=args.loc_pre_time,
-                                 loc_post_time=args.loc_post_time,
+                                 custm_pre_time=args.custm_pre_time,
+                                 custm_post_time=args.custm_post_time,
                                  depot_pre_time=args.depot_pre_time,
                                  depot_post_time=args.depot_post_time,
                                  ensure_minimum_charge=args.ensure_minimum_charge,
@@ -33,8 +33,8 @@ def main(args):
                         dt=args.dt,
                         vehicle_speed=args.vehicle_speed,
                         loss_coef=args.loss_coef,
-                        loc_pre_time=args.loc_pre_time,
-                        loc_post_time=args.loc_post_time,
+                        custm_pre_time=args.custm_pre_time,
+                        custm_post_time=args.custm_post_time,
                         depot_pre_time=args.depot_pre_time,
                         depot_post_time=args.depot_post_time,
                         ensure_minimum_charge=args.ensure_minimum_charge,
@@ -72,8 +72,8 @@ if __name__ == "__main__":
     parser.add_argument("--dt", type=float, default=1.)
     parser.add_argument("--vehicle_speed", type=float, default=41.)
     parser.add_argument("--loss_coef", type=int, default=100)
-    parser.add_argument("--loc_pre_time", type=float, default=0.5)
-    parser.add_argument("--loc_post_time", type=float, default=0.5)
+    parser.add_argument("--custm_pre_time", type=float, default=0.5)
+    parser.add_argument("--custm_post_time", type=float, default=0.5)
     parser.add_argument("--depot_pre_time", type=float, default=0.17)
     parser.add_argument("--depot_post_time", type=float, default=0.17)
     parser.add_argument("--ensure_minimum_charge", action="store_true")
@@ -88,6 +88,6 @@ if __name__ == "__main__":
     parser.add_argument("--merge_duplicated_depots", action="store_true")
     parser.add_argument("--num_clusters", type=int, default=None)
     parser.add_argument("--parallel", action="store_true")
-    parser.add_argument("--num_cpus", type=int, default=4)
+    parser.add_argument("--num_cpus", type=int, default=8)
     args = parser.parse_args()
     main(args)

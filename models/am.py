@@ -9,7 +9,7 @@ PENALTY_COEF = 100
 
 class AM4CIRP(nn.Module):
     def __init__(self,
-                 loc_dim: int,
+                 custm_dim: int,
                  depot_dim: int,
                  vehicle_dim: int,
                  emb_dim: int,
@@ -19,7 +19,7 @@ class AM4CIRP(nn.Module):
                  device: str = "cpu"):
         super().__init__()
         self.device = device
-        self.encoder = AMEncoder(loc_dim, depot_dim, vehicle_dim, emb_dim, num_heads, num_enc_layers, dropout)
+        self.encoder = AMEncoder(custm_dim, depot_dim, vehicle_dim, emb_dim, num_heads, num_enc_layers, dropout)
         self.decoder = AMDecoder(emb_dim)
 
     def forward(self,
@@ -46,10 +46,10 @@ class AM4CIRP(nn.Module):
         prob_list = []; tour_list = []; vehicle_list = []; skip_list = []
         state = CIRPState(input, self.device, fname)
         while not state.all_finished():
-            loc_feats, depot_feats, vehicle_feats = state.get_inputs()
+            custm_feats, depot_feats, vehicle_feats = state.get_inputs()
             mask = state.get_mask()
             # encoding
-            node_context, vehicle_context = self.encoder(loc_feats, depot_feats, vehicle_feats)
+            node_context, vehicle_context = self.encoder(custm_feats, depot_feats, vehicle_feats)
             # decoding
             selected_vehicle_id = state.get_selected_vehicle_id()
             vehicle_context = torch.gather(vehicle_context, 1, selected_vehicle_id[:, None, None].expand(state.batch_size, 1, vehicle_context.size(-1)))
@@ -115,10 +115,10 @@ class AM4CIRP(nn.Module):
         prob_list = []; tour_list = []; vehicle_list = []; skip_list = []
         state = CIRPState(input, self.device, fname)
         while not state.all_finished():
-            loc_feats, depot_feats, vehicle_feats = state.get_inputs()
+            custm_feats, depot_feats, vehicle_feats = state.get_inputs()
             mask = state.get_mask()
             # encoding
-            node_context, vehicle_context = self.encoder(loc_feats, depot_feats, vehicle_feats)
+            node_context, vehicle_context = self.encoder(custm_feats, depot_feats, vehicle_feats)
             # decoding
             selected_vehicle_id = state.get_selected_vehicle_id()
             vehicle_context = torch.gather(vehicle_context, 1, selected_vehicle_id[:, None, None].expand(state.batch_size, 1, vehicle_context.size(-1)))
@@ -179,7 +179,7 @@ class AM4CIRP(nn.Module):
         node_ids: torch.Tensor [batch_size x max_steps]
         masks: torch.Tensor [batch_size x max_steps]
         """
-        batch_size = len(inputs["loc_coords"])    
+        batch_size = len(inputs["custm_coords"])    
         if search_width * batch_size > max_batch_size:
             assert (max_batch_size % batch_size) == 0
             assert ((search_width * batch_size) % max_batch_size) == 0

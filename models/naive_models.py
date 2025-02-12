@@ -51,12 +51,12 @@ class NaiveModel(nn.Module):
         tour_list = []; vehicle_list = []; skip_list = []
         state = CIRPState(input, self.device, fname)
         while not state.all_finished():
-            loc_feats, depot_feats, vehicle_feats = state.get_inputs()
+            custm_feats, depot_feats, vehicle_feats = state.get_inputs()
             node_mask = state.get_mask() # [batch_size x num_nodes]
             # decoding
             selected_vehicle_id = state.get_selected_vehicle_id()
             if self.model_type == "naive_greedy":
-                selected_node_ids = self.greedy_decode(loc_feats, depot_feats, vehicle_feats, selected_vehicle_id, node_mask) # [batch_size]
+                selected_node_ids = self.greedy_decode(custm_feats, depot_feats, vehicle_feats, selected_vehicle_id, node_mask) # [batch_size]
             elif self.model_type == "naive_random":
                 selected_node_ids = self.random_decode(node_mask) # [batch_size]
             elif self.model_type == "wo_move":
@@ -72,7 +72,7 @@ class NaiveModel(nn.Module):
         return state, tour_list, vehicle_list, skip_list
     
     def greedy_decode(self,
-                      loc_feats,
+                      custm_feats,
                       depot_feats,
                       vehicle_feats,
                       selected_vehicle_id,
@@ -85,22 +85,22 @@ class NaiveModel(nn.Module):
         -------
         selected_node_ids: torch.LongTensor [batch_size]
         """
-        num_locs = loc_feats.size(1)
-        # if at least one visitable location exists, select the location whose battery is minimum as the next destination
-        loc_mask = node_mask[:, :num_locs] # [batch_size, num_locs]
-        loc_batch = loc_mask.sum(-1) > 0 # [batch_size]
-        loc_batt = loc_feats[:, :, -1] # [batch_size, num_locs]
-        loc_batt_min_idx = (loc_batt + ~loc_mask * 1e+9).min(-1)[1] # remove unvisitable locations by adding a large value [batch_size]
-        selected_node_ids = loc_batt_min_idx * loc_batch
+        num_custms = custm_feats.size(1)
+        # if at least one visitable custmation exists, select the custmation whose battery is minimum as the next destination
+        custm_mask = node_mask[:, :num_custms] # [batch_size, num_custms]
+        custm_batch = custm_mask.sum(-1) > 0 # [batch_size]
+        custm_batt = custm_feats[:, :, -1] # [batch_size, num_custms]
+        custm_batt_min_idx = (custm_batt + ~custm_mask * 1e+9).min(-1)[1] # remove unvisitable custmations by adding a large value [batch_size]
+        selected_node_ids = custm_batt_min_idx * custm_batch
         
-        # if no visitable location exists, select the nearest depot to the current position as the next destination
-        depot_batch = ~loc_batch
+        # if no visitable custmation exists, select the nearest depot to the current position as the next destination
+        depot_batch = ~custm_batch
         batch_size = depot_batch.size(0)
         vehicle_corrds = vehicle_feats[:, :, 1:3] # [batch_size, num_vehicles, coord_dim]
         curr_coords = vehicle_corrds.gather(1, selected_vehicle_id[:, None, None].expand(batch_size, 1, vehicle_corrds.size(-1))) # [batch_size, 1, coord_dim]
         depot_coords = depot_feats[:, :, :2] # [batch_size, num_depots, coord_dim]
         nearest_depot_idx = torch.min(torch.linalg.norm(curr_coords - depot_coords, dim=-1), -1)[1] # [batch_size]
-        selected_node_ids += (nearest_depot_idx + num_locs) * depot_batch # [batch_size]
+        selected_node_ids += (nearest_depot_idx + num_custms) * depot_batch # [batch_size]
 
         return selected_node_ids
     
@@ -170,7 +170,7 @@ class NaiveModel(nn.Module):
         node_ids: torch.Tensor [batch_size x max_steps]
         masks: torch.Tensor [batch_size x max_steps]
         """
-        batch_size = len(inputs["loc_coords"])    
+        batch_size = len(inputs["custm_coords"])    
         if search_width * batch_size > max_batch_size:
             assert (max_batch_size % batch_size) == 0
             assert ((search_width * batch_size) % max_batch_size) == 0

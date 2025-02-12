@@ -4,7 +4,7 @@ import math
 
 class AMEncoder(nn.Module):
     def __init__(self, 
-                 loc_dim: int,
+                 custm_dim: int,
                  depot_dim: int,
                  vehicle_dim: int,
                  emb_dim: int,
@@ -12,18 +12,18 @@ class AMEncoder(nn.Module):
                  num_mha_layers: int,
                  dropout: float = 0.0):
         super().__init__()
-        self.loc_dim = loc_dim
+        self.custm_dim = custm_dim
         self.depot_dim = depot_dim 
         self.emb_dim = emb_dim
         self.dim_feedforward = 2 * emb_dim
         self.num_mha_layers = num_mha_layers
 
         # initial embedding
-        self.init_linear_loc     = nn.Linear(loc_dim, emb_dim)
+        self.init_linear_custm     = nn.Linear(custm_dim, emb_dim)
         self.init_linear_depot   = nn.Linear(depot_dim, emb_dim)
         self.init_linear_vehicle = nn.Linear(vehicle_dim, emb_dim)
         # Transformer Encoder
-        # for nodes (locations + depots)
+        # for nodes (custmations + depots)
         node_mha_layer = nn.TransformerEncoderLayer(d_model=emb_dim, 
                                                     nhead=num_heads,
                                                     dim_feedforward=self.dim_feedforward,
@@ -47,7 +47,7 @@ class AMEncoder(nn.Module):
             param.data.uniform_(-stdv, stdv)
 
     def forward(self,
-                loc_feats: torch.Tensor,
+                custm_feats: torch.Tensor,
                 depot_feats: torch.Tensor,
                 vehicle_feats: torch.Tensor):
         """
@@ -59,9 +59,9 @@ class AMEncoder(nn.Module):
 
         """
         # initial embeddings
-        loc_emb   = self.init_linear_loc(loc_feats)     # [batch_size x num_locs x emb_dim]
+        custm_emb   = self.init_linear_custm(custm_feats)     # [batch_size x num_custms x emb_dim]
         depot_emb = self.init_linear_depot(depot_feats) # [batch_size x num_depots x emb_dim]
-        node_emb  = torch.cat((loc_emb, depot_emb), 1)  # [batch_size x num_nodes x emb_dim]
+        node_emb  = torch.cat((custm_emb, depot_emb), 1)  # [batch_size x num_nodes x emb_dim]
         vehicle_emb = self.init_linear_vehicle(vehicle_feats) # [batch_size x num_vehicles x emb_dim]
         # transformer encoding
         node_emb = self.node_mha(node_emb) # [batch_size x num_nodes x emb_dim]

@@ -79,8 +79,8 @@ class TimeSpaceNetwork():
     #     print(self.nodes)
     #     print(self.distance_matrix)
     #     #print(self.arcs_array)
-    #     block = np.block([[self.valid_arcs[t1, t2] for t2 in self.time_index] for t1 in self.time_index])
-    #     print(block)
+    #     bcustmk = np.bcustmk([[self.valid_arcs[t1, t2] for t2 in self.time_index] for t1 in self.time_index])
+    #     print(bcustmk)
 
     def visualize(self, outputdir: str) -> None:
         pass
@@ -145,8 +145,8 @@ class CP4TSN():
                  dt: float = 0.5,
                  vehicle_speed: float = 41,
                  loss_coef: int = 1000,
-                 loc_pre_time: float = 0.5,
-                 loc_post_time: float = 0.5,
+                 custm_pre_time: float = 0.5,
+                 custm_post_time: float = 0.5,
                  depot_pre_time: float = 0.17,
                  depot_post_time: float = 0.17,
                  ensure_minimum_charge: bool = True,
@@ -167,14 +167,14 @@ class CP4TSN():
         self.T  = int(time_horizon / dt) + 1
         self.vehicle_speed = vehicle_speed
         self.loss_coef = loss_coef
-        self.loc_pre_time = loc_pre_time
-        self.loc_post_time = loc_post_time
+        self.custm_pre_time = custm_pre_time
+        self.custm_post_time = custm_post_time
         self.depot_pre_time = depot_pre_time
         self.depot_post_time = depot_post_time
         self.ensure_minimum_charge = ensure_minimum_charge
         self.ensure_minimum_supply = ensure_minimum_supply
-        self.loc_surplus_pre_time = loc_pre_time - dt * (math.ceil(loc_pre_time / dt) - 1)
-        self.loc_surplus_post_time = loc_post_time - dt * (math.ceil(loc_post_time / dt) - 1)
+        self.custm_surplus_pre_time = custm_pre_time - dt * (math.ceil(custm_pre_time / dt) - 1)
+        self.custm_surplus_post_time = custm_post_time - dt * (math.ceil(custm_post_time / dt) - 1)
         self.depot_surplus_pre_time = depot_pre_time - dt * (math.ceil(depot_pre_time / dt) - 1)
         self.depot_surplus_post_time = depot_post_time - dt * (math.ceil(depot_post_time / dt) - 1)
 
@@ -247,7 +247,7 @@ class CP4TSN():
             print("No solution found :(")
 
         # if status in [cp_model.OPTIMAL, cp_model.FEASIBLE]:
-        #     print([solver.Value(variables["num_down_loc"][t]) for t in range(self.T)])
+        #     print([solver.Value(variables["num_down_custm"][t]) for t in range(self.T)])
         #     print([solver.Value(variables["travel_distance"][veh_id]) for veh_id in range(self.num_vehicles)])
         #     for veh_id in range(self.num_vehicles):
         #         print(f"EV{veh_id}")
@@ -269,16 +269,16 @@ class CP4TSN():
         return {
             "route": route,
             "total_route_length": sum(solver.Value(variables["travel_distance"][veh_id]) for veh_id in range(self.num_vehicles)) / LARGE_VALUE,
-            "num_down_locs": [solver.Value(variables["num_down_loc"][t]) for t in range(self.T)],
+            "num_down_custms": [solver.Value(variables["num_down_custm"][t]) for t in range(self.T)],
             "objective_value": solver.ObjectiveValue() / (LARGE_VALUE * BIT_LARGE_VALUE)
         }
     
     def set_input(self, input: dict):
-        # locations
-        self.loc_cap = (input["loc_cap"] * LARGE_VALUE).to(torch.long).tolist() # [num_locs]
-        self.loc_consump_rate = (input["loc_consump_rate"] * LARGE_VALUE).to(torch.long).tolist() # [num_locs]
-        self.loc_init_batt = (input["loc_cap"] * LARGE_VALUE).to(torch.long).tolist() # [num_locs]
-        self.loc_min_batt = 0
+        # custmations
+        self.custm_cap = (input["custm_cap"] * LARGE_VALUE).to(torch.long).tolist() # [num_custms]
+        self.custm_consump_rate = (input["custm_consump_rate"] * LARGE_VALUE).to(torch.long).tolist() # [num_custms]
+        self.custm_init_batt = (input["custm_cap"] * LARGE_VALUE).to(torch.long).tolist() # [num_custms]
+        self.custm_min_batt = 0
 
         # depots
         self.depot_discharge_rate = (input["depot_discharge_rate"] * LARGE_VALUE).to(torch.long).tolist() # [num_depots]
@@ -292,15 +292,15 @@ class CP4TSN():
         self.veh_min_batt = 0
 
         # distance_matrix
-        self.loc_coords = input["loc_coords"].detach().numpy().copy() # [num_locs, coord_dim]
+        self.custm_coords = input["custm_coords"].detach().numpy().copy() # [num_custms, coord_dim]
         self.depot_coords = input["depot_coords"].detach().numpy().copy() # [num_depots, coord_dim]
-        self.node_coords = np.concatenate((self.loc_coords, self.depot_coords), 0) # [num_nodes, coord_dim]
+        self.node_coords = np.concatenate((self.custm_coords, self.depot_coords), 0) # [num_nodes, coord_dim]
         self.distance_matrix = (distance.cdist(self.node_coords, self.node_coords) * LARGE_VALUE).astype(np.long)
 
         # parameters
-        self.num_locs = len(self.loc_cap)
+        self.num_custms = len(self.custm_cap)
         self.num_depots = len(self.depot_discharge_rate)
-        self.num_nodes = self.num_locs + self.num_depots
+        self.num_nodes = self.num_custms + self.num_depots
         self.num_vehicles = len(self.veh_cap)
         self.grid_scale = input["grid_scale"]
         self.normalized_veh_speed = int(self.vehicle_speed / self.grid_scale * LARGE_VALUE)
@@ -320,14 +320,14 @@ class CP4TSN():
         return variables
 
     def add_batt_variables(self, model, var):
-        # for locations
-        var["loc_batt"] = [[model.NewIntVar(0, self.loc_cap[i], f"loc{i}_t{t}_batt") for t in range(self.T)] for i in range(self.num_locs)]
-        var["loc_slack"] = [[model.NewIntVar(0, self.loc_min_batt+1, f"loc{i}_t{t}_slack") for t in range(self.T)] for i in range(self.num_locs)]
-        var["enable_slack"] = [[model.NewBoolVar(f"loc{i}_t{t}_enable_slack") for t in range(self.T)] for i in range(self.num_locs)]
-        var["loc_is_down"] = [[model.NewBoolVar(f"loc{i}_t{t}_is_down") for t in range(self.T)] for i in range(self.num_locs)]
-        var["loc_is_full"] = [[model.NewBoolVar(f"loc{i}_t{t}_is_full") for t in range(self.T)] for i in range(self.num_locs)]
-        var["loc_is_normal"] = [[model.NewBoolVar(f"loc{i}_t{t}_is_normal") for t in range(self.T)] for i in range(self.num_locs)]
-        var["loc_charge_amount"] = [[model.NewIntVar(0, self.loc_cap[i], f"loc{i}_t{t}_charge_amount") for t in range(self.T)] for i in range(self.num_locs)]
+        # for custmations
+        var["custm_batt"] = [[model.NewIntVar(0, self.custm_cap[i], f"custm{i}_t{t}_batt") for t in range(self.T)] for i in range(self.num_custms)]
+        var["custm_slack"] = [[model.NewIntVar(0, self.custm_min_batt+1, f"custm{i}_t{t}_slack") for t in range(self.T)] for i in range(self.num_custms)]
+        var["enable_slack"] = [[model.NewBoolVar(f"custm{i}_t{t}_enable_slack") for t in range(self.T)] for i in range(self.num_custms)]
+        var["custm_is_down"] = [[model.NewBoolVar(f"custm{i}_t{t}_is_down") for t in range(self.T)] for i in range(self.num_custms)]
+        var["custm_is_full"] = [[model.NewBoolVar(f"custm{i}_t{t}_is_full") for t in range(self.T)] for i in range(self.num_custms)]
+        var["custm_is_normal"] = [[model.NewBoolVar(f"custm{i}_t{t}_is_normal") for t in range(self.T)] for i in range(self.num_custms)]
+        var["custm_charge_amount"] = [[model.NewIntVar(0, self.custm_cap[i], f"custm{i}_t{t}_charge_amount") for t in range(self.T)] for i in range(self.num_custms)]
         # for EVs
         var["veh_batt"]           = [[model.NewIntVar(0, self.veh_cap[k], f"veh{k}_t{t}_batt") for t in range(self.T)] for k in range(self.num_vehicles)]
         var["veh_charge_amount"]  = [[model.NewIntVar(0, self.veh_cap[k], f"veh{k}_t{t}_charge_amount") for t in range(self.T)] for k in range(self.num_vehicles)]
@@ -336,22 +336,22 @@ class CP4TSN():
     def add_route_variables(self, model, var):
         var["x"] = {(k, arc): model.NewBoolVar(f"x_veh{k}_arc{arc}") for k in range(self.num_vehicles) for arc in self.tsn.arcs}
         var["z"] = [[[model.NewBoolVar(f"z_veh{k}_node{n}_t{t}") for t in range(self.T)] for n in range(self.num_nodes)] for k in range(self.num_vehicles)]
-        var["loc_is_down2"] = [[model.NewBoolVar(f"loc{i}_t{t}_is_down2") for t in range(self.T)] for i in range(self.num_locs)]
-        var["veh_prepare_at_loc"]  = [[[model.NewBoolVar(f"veh{k}_loc{i}_t{t}_prepare_at_loc") for t in range(self.T)] for i in range(self.num_locs)] for k in range(self.num_vehicles)]
-        var["veh_prepare_at_loc2"] = [[[model.NewBoolVar(f"veh{k}_loc{i}_t{t}_prepare_at_loc2") for t in range(self.T)] for i in range(self.num_locs)] for k in range(self.num_vehicles)] 
-        var["veh_cleanup_at_loc"]  = [[[model.NewBoolVar(f"veh{k}_loc{i}_t{t}_cleanup_at_loc") for t in range(self.T)] for i in range(self.num_locs)] for k in range(self.num_vehicles)]
-        var["veh_cleanup_at_loc2"] = [[[model.NewBoolVar(f"veh{k}_loc{i}_t{t}_cleanup_at_loc2") for t in range(self.T)] for i in range(self.num_locs)] for k in range(self.num_vehicles)]
+        var["custm_is_down2"] = [[model.NewBoolVar(f"custm{i}_t{t}_is_down2") for t in range(self.T)] for i in range(self.num_custms)]
+        var["veh_prepare_at_custm"]  = [[[model.NewBoolVar(f"veh{k}_custm{i}_t{t}_prepare_at_custm") for t in range(self.T)] for i in range(self.num_custms)] for k in range(self.num_vehicles)]
+        var["veh_prepare_at_custm2"] = [[[model.NewBoolVar(f"veh{k}_custm{i}_t{t}_prepare_at_custm2") for t in range(self.T)] for i in range(self.num_custms)] for k in range(self.num_vehicles)] 
+        var["veh_cleanup_at_custm"]  = [[[model.NewBoolVar(f"veh{k}_custm{i}_t{t}_cleanup_at_custm") for t in range(self.T)] for i in range(self.num_custms)] for k in range(self.num_vehicles)]
+        var["veh_cleanup_at_custm2"] = [[[model.NewBoolVar(f"veh{k}_custm{i}_t{t}_cleanup_at_custm2") for t in range(self.T)] for i in range(self.num_custms)] for k in range(self.num_vehicles)]
         var["veh_prepare_at_depot"] = [[[model.NewBoolVar(f"veh{k}_depot{j}_t{t}_prepare_at_depot") for t in range(self.T)] for j in range(self.num_depots)] for k in range(self.num_vehicles)]
         var["veh_cleanup_at_depot"] = [[[model.NewBoolVar(f"veh{k}_depot{j}_t{t}_cleanup_at_depot") for t in range(self.T)] for j in range(self.num_depots)] for k in range(self.num_vehicles)]
         if self.ensure_minimum_supply:
-            var["loc_supply_notenough"] = [[[model.NewBoolVar(f"not_enough_veh{k}_loc{i}_t{t}") for t in range(self.T)] for i in range(self.num_locs)] for k in range(self.num_vehicles)]
-            var["loc_suuply_notenough_notcleanup"] = [[[model.NewBoolVar(f"notenough_notcleanup_veh{k}_loc{i}_t{t}") for t in range(self.T)] for i in range(self.num_locs)] for k in range(self.num_vehicles)]
+            var["custm_supply_notenough"] = [[[model.NewBoolVar(f"not_enough_veh{k}_custm{i}_t{t}") for t in range(self.T)] for i in range(self.num_custms)] for k in range(self.num_vehicles)]
+            var["custm_suuply_notenough_notcleanup"] = [[[model.NewBoolVar(f"notenough_notcleanup_veh{k}_custm{i}_t{t}") for t in range(self.T)] for i in range(self.num_custms)] for k in range(self.num_vehicles)]
         if self.ensure_minimum_charge:
             var["veh_charge_notenough"] = [[[model.NewBoolVar(f"not_enough_veh{k}_depot{j}_t{t}") for t in range(self.T)] for j in range(self.num_depots)] for k in range(self.num_vehicles)]
             var["veh_charge_notenough_notcleanup"] = [[[model.NewBoolVar(f"notenough_notcleanup_veh{k}_depot{j}_t{t}") for t in range(self.T)] for j in range(self.num_depots)] for k in range(self.num_vehicles)]
 
     def add_objective_variables(self, model, var):
-        var["num_down_loc"] = [model.NewIntVar(0, self.num_locs, f"num_down_loc_t{t}") for t in range(self.T)]
+        var["num_down_custm"] = [model.NewIntVar(0, self.num_custms, f"num_down_custm_t{t}") for t in range(self.T)]
         var["travel_distance"] = [model.NewIntVar(0, INFINITY, f"veh{k}_travel_distance") for k in range(self.num_vehicles)]
         var["loss1"] = model.NewIntVar(0, INFINITY, "loss1")
         var["loss2"] = model.NewIntVar(0, INFINITY, "loss2")
@@ -368,20 +368,20 @@ class CP4TSN():
         for veh_id in range(self.num_vehicles):
             model.Add(var["veh_batt"][veh_id][0] == self.veh_init_batt[veh_id])
             for t in range(self.T):
-                model.Add(var["veh_is_discharging"][veh_id][t] == sum(var["z"][veh_id][loc_id][t] for loc_id in range(self.num_locs)))
+                model.Add(var["veh_is_discharging"][veh_id][t] == sum(var["z"][veh_id][custm_id][t] for custm_id in range(self.num_custms)))
                 model.Add(var["veh_batt"][veh_id][t] >= self.veh_min_batt).OnlyEnforceIf(var["veh_is_discharging"][veh_id][t])
-        # for locations
-        for loc_id in range(self.num_locs):
-            model.Add(var["loc_batt"][loc_id][0] == self.loc_init_batt[loc_id])
+        # for custmations
+        for custm_id in range(self.num_custms):
+            model.Add(var["custm_batt"][custm_id][0] == self.custm_init_batt[custm_id])
             for t in range(self.T):
                 # implement enable_slack
-                model.Add(var["loc_batt"][loc_id][t] < self.loc_min_batt).OnlyEnforceIf(var["enable_slack"][loc_id][t])
-                model.Add(var["loc_batt"][loc_id][t] >= self.loc_min_batt).OnlyEnforceIf(var["enable_slack"][loc_id][t].Not())
-                # implement loc_slack
-                model.Add(var["loc_slack"][loc_id][t] >= 1).OnlyEnforceIf(var["enable_slack"][loc_id][t])
-                model.Add(var["loc_slack"][loc_id][t] == 0).OnlyEnforceIf(var["enable_slack"][loc_id][t].Not())
+                model.Add(var["custm_batt"][custm_id][t] < self.custm_min_batt).OnlyEnforceIf(var["enable_slack"][custm_id][t])
+                model.Add(var["custm_batt"][custm_id][t] >= self.custm_min_batt).OnlyEnforceIf(var["enable_slack"][custm_id][t].Not())
+                # implement custm_slack
+                model.Add(var["custm_slack"][custm_id][t] >= 1).OnlyEnforceIf(var["enable_slack"][custm_id][t])
+                model.Add(var["custm_slack"][custm_id][t] == 0).OnlyEnforceIf(var["enable_slack"][custm_id][t].Not())
                 # add a constraint
-                model.Add(var["loc_batt"][loc_id][t] + var["loc_slack"][loc_id][t] >= self.loc_min_batt)
+                model.Add(var["custm_batt"][custm_id][t] + var["custm_slack"][custm_id][t] >= self.custm_min_batt)
 
     def ensure_route_continuity(self, model, var):
         """
@@ -428,14 +428,14 @@ class CP4TSN():
                 model.Add(sum(var["x"][veh_id, arc] for arc in inflow_arcs for veh_id in range(self.num_vehicles)) <= 1)
   
     def define_batt_behavior(self, model, var):
-        prepare_t = math.ceil(self.loc_pre_time / self.dt)
-        for loc_id in range(self.num_locs):
+        prepare_t = math.ceil(self.custm_pre_time / self.dt)
+        for custm_id in range(self.num_custms):
             for veh_id in range(self.num_vehicles):
                 for p in range(prepare_t):
-                    model.Add(var["veh_prepare_at_loc"][veh_id][loc_id][p] == 0)
-                    model.Add(var["veh_cleanup_at_loc"][veh_id][loc_id][self.T-p-1] == 0)
-                model.Add(var["veh_prepare_at_loc2"][veh_id][loc_id][self.T-1] == 0)
-                model.Add(var["veh_cleanup_at_loc2"][veh_id][loc_id][0] == 0)
+                    model.Add(var["veh_prepare_at_custm"][veh_id][custm_id][p] == 0)
+                    model.Add(var["veh_cleanup_at_custm"][veh_id][custm_id][self.T-p-1] == 0)
+                model.Add(var["veh_prepare_at_custm2"][veh_id][custm_id][self.T-1] == 0)
+                model.Add(var["veh_cleanup_at_custm2"][veh_id][custm_id][0] == 0)
 
         for t in range(self.T-1):
             prev_t = t
@@ -444,66 +444,66 @@ class CP4TSN():
             arriving_arcs = self.tsn.arriving_arcs(curr_t)
             for veh_id in range(self.num_vehicles):
                 # charging: depot -> vehcile
-                model.Add(var["veh_charge_amount"][veh_id][curr_t] == sum([int(self.depot_discharge_rate[depot_offst_id] * self.dt) * var["z"][veh_id][depot_id][curr_t] for depot_offst_id, depot_id in enumerate(range(self.num_locs, self.num_nodes))])
+                model.Add(var["veh_charge_amount"][veh_id][curr_t] == sum([int(self.depot_discharge_rate[depot_offst_id] * self.dt) * var["z"][veh_id][depot_id][curr_t] for depot_offst_id, depot_id in enumerate(range(self.num_custms, self.num_nodes))])
                           - sum(int(self.veh_discharge_rate[veh_id] * self.depot_surplus_pre_time) * var["veh_prepare_at_depot"][veh_id][depot_offst_id][curr_t] for depot_offst_id in range(self.num_depots))   # TODO
                           - sum(int(self.veh_discharge_rate[veh_id] * self.depot_surplus_post_time) * var["veh_cleanup_at_depot"][veh_id][depot_offst_id][curr_t] for depot_offst_id in range(self.num_depots))) # TODO
                 # EV's battery change
                 model.Add(var["veh_batt"][veh_id][curr_t] == var["veh_batt"][veh_id][prev_t] 
-                          - sum([int(self.veh_discharge_rate[veh_id] * self.dt) * var["z"][veh_id][i][curr_t] for i in range(self.num_locs)]) # discharge consumption 
+                          - sum([int(self.veh_discharge_rate[veh_id] * self.dt) * var["z"][veh_id][i][curr_t] for i in range(self.num_custms)]) # discharge consumption 
                           - sum([int(self.veh_consump_rate[veh_id] * self.tsn.arc_distance(arc)) * var["x"][veh_id, arc] for arc in arriving_arcs])              # travel consumption
                           + var["veh_charge_amount"][veh_id][curr_t])                                                     # power charge form a charge station 
             
-            # for locations
-            for loc_id in range(self.num_locs):
+            # for custmations
+            for custm_id in range(self.num_custms):
                 for veh_id in range(self.num_vehicles):
                     if prev_t + prepare_t < self.T: # if prepare time does not exceed the time horizon
-                        # implement veh_prepare_at_loc & veh_cleanup_at_loc
-                        diff_z_loc = var["z"][veh_id][loc_id][prev_t+prepare_t] - var["z"][veh_id][loc_id][prev_t]
-                        model.Add(diff_z_loc == 1).OnlyEnforceIf(var["veh_prepare_at_loc"][veh_id][loc_id][prev_t+prepare_t])
-                        model.Add(diff_z_loc <= 0).OnlyEnforceIf(var["veh_prepare_at_loc"][veh_id][loc_id][prev_t+prepare_t].Not())
-                        model.Add(-diff_z_loc == 1).OnlyEnforceIf(var["veh_cleanup_at_loc"][veh_id][loc_id][prev_t])
-                        model.Add(-diff_z_loc <= 0).OnlyEnforceIf(var["veh_cleanup_at_loc"][veh_id][loc_id][prev_t].Not())
-                    # implement veh_prepare_at_loc & veh_cleanup_at_loc
-                    diff_veh_prepare_at_loc = var["veh_prepare_at_loc"][veh_id][loc_id][prev_t] - var["veh_prepare_at_loc"][veh_id][loc_id][curr_t]
-                    diff_veh_cleanup_at_loc = var["veh_cleanup_at_loc"][veh_id][loc_id][curr_t] - var["veh_cleanup_at_loc"][veh_id][loc_id][prev_t]
-                    model.Add(diff_veh_prepare_at_loc == 1).OnlyEnforceIf(var["veh_prepare_at_loc2"][veh_id][loc_id][prev_t])
-                    model.Add(diff_veh_prepare_at_loc <= 0).OnlyEnforceIf(var["veh_prepare_at_loc2"][veh_id][loc_id][prev_t].Not())
-                    model.Add(diff_veh_cleanup_at_loc == 1).OnlyEnforceIf(var["veh_cleanup_at_loc2"][veh_id][loc_id][curr_t])
-                    model.Add(diff_veh_cleanup_at_loc <= 0).OnlyEnforceIf(var["veh_cleanup_at_loc2"][veh_id][loc_id][curr_t].Not())
+                        # implement veh_prepare_at_custm & veh_cleanup_at_custm
+                        diff_z_custm = var["z"][veh_id][custm_id][prev_t+prepare_t] - var["z"][veh_id][custm_id][prev_t]
+                        model.Add(diff_z_custm == 1).OnlyEnforceIf(var["veh_prepare_at_custm"][veh_id][custm_id][prev_t+prepare_t])
+                        model.Add(diff_z_custm <= 0).OnlyEnforceIf(var["veh_prepare_at_custm"][veh_id][custm_id][prev_t+prepare_t].Not())
+                        model.Add(-diff_z_custm == 1).OnlyEnforceIf(var["veh_cleanup_at_custm"][veh_id][custm_id][prev_t])
+                        model.Add(-diff_z_custm <= 0).OnlyEnforceIf(var["veh_cleanup_at_custm"][veh_id][custm_id][prev_t].Not())
+                    # implement veh_prepare_at_custm & veh_cleanup_at_custm
+                    diff_veh_prepare_at_custm = var["veh_prepare_at_custm"][veh_id][custm_id][prev_t] - var["veh_prepare_at_custm"][veh_id][custm_id][curr_t]
+                    diff_veh_cleanup_at_custm = var["veh_cleanup_at_custm"][veh_id][custm_id][curr_t] - var["veh_cleanup_at_custm"][veh_id][custm_id][prev_t]
+                    model.Add(diff_veh_prepare_at_custm == 1).OnlyEnforceIf(var["veh_prepare_at_custm2"][veh_id][custm_id][prev_t])
+                    model.Add(diff_veh_prepare_at_custm <= 0).OnlyEnforceIf(var["veh_prepare_at_custm2"][veh_id][custm_id][prev_t].Not())
+                    model.Add(diff_veh_cleanup_at_custm == 1).OnlyEnforceIf(var["veh_cleanup_at_custm2"][veh_id][custm_id][curr_t])
+                    model.Add(diff_veh_cleanup_at_custm <= 0).OnlyEnforceIf(var["veh_cleanup_at_custm2"][veh_id][custm_id][curr_t].Not())
                 if self.ensure_minimum_supply:
                     for veh_id in range(self.num_vehicles):
-                        # implement loc_supply_not_enough
-                        model.Add(self.loc_cap[loc_id] - var["loc_batt"][loc_id][prev_t] >  0).OnlyEnforceIf(var["loc_supply_notenough"][veh_id][loc_id][prev_t])
-                        model.Add(self.loc_cap[loc_id] - var["loc_batt"][loc_id][prev_t] <= 0).OnlyEnforceIf(var["loc_supply_notenough"][veh_id][loc_id][prev_t].Not())
-                        # implement loc_suuply_notenough_notcleanup
-                        model.AddImplication(var["loc_suuply_notenough_notcleanup"][veh_id][loc_id][prev_t], var["loc_supply_notenough"][veh_id][loc_id][prev_t])
-                        model.AddImplication(var["loc_suuply_notenough_notcleanup"][veh_id][loc_id][prev_t], var["veh_cleanup_at_loc"][veh_id][loc_id][prev_t].Not())
+                        # implement custm_supply_not_enough
+                        model.Add(self.custm_cap[custm_id] - var["custm_batt"][custm_id][prev_t] >  0).OnlyEnforceIf(var["custm_supply_notenough"][veh_id][custm_id][prev_t])
+                        model.Add(self.custm_cap[custm_id] - var["custm_batt"][custm_id][prev_t] <= 0).OnlyEnforceIf(var["custm_supply_notenough"][veh_id][custm_id][prev_t].Not())
+                        # implement custm_suuply_notenough_notcleanup
+                        model.AddImplication(var["custm_suuply_notenough_notcleanup"][veh_id][custm_id][prev_t], var["custm_supply_notenough"][veh_id][custm_id][prev_t])
+                        model.AddImplication(var["custm_suuply_notenough_notcleanup"][veh_id][custm_id][prev_t], var["veh_cleanup_at_custm"][veh_id][custm_id][prev_t].Not())
                         # add a constraint
-                        model.Add(var["z"][veh_id][loc_id][curr_t] >= var["z"][veh_id][loc_id][prev_t]).OnlyEnforceIf(var["loc_suuply_notenough_notcleanup"][veh_id][loc_id][prev_t])
+                        model.Add(var["z"][veh_id][custm_id][curr_t] >= var["z"][veh_id][custm_id][prev_t]).OnlyEnforceIf(var["custm_suuply_notenough_notcleanup"][veh_id][custm_id][prev_t])
 
                 # supplying: 
-                model.Add(var["loc_charge_amount"][loc_id][curr_t] == int(self.veh_discharge_rate[veh_id] * self.dt) * sum([var["z"][veh_id_][loc_id][curr_t] - var["veh_prepare_at_loc"][veh_id_][loc_id][curr_t] - var["veh_cleanup_at_loc"][veh_id_][loc_id][curr_t] for veh_id_ in range(self.num_vehicles)])
-                                                                      + int(self.veh_discharge_rate[veh_id] * (self.dt - self.loc_surplus_pre_time)) * sum(var["veh_prepare_at_loc2"][veh_id_][loc_id][curr_t] for veh_id_ in range(self.num_vehicles))
-                                                                      + int(self.veh_discharge_rate[veh_id] * (self.dt - self.loc_surplus_post_time)) * sum(var["veh_cleanup_at_loc2"][veh_id_][loc_id][curr_t] for veh_id_ in range(self.num_vehicles)))
-                # location's battery change
-                model.Add(var["loc_batt"][loc_id][curr_t] == var["loc_batt"][loc_id][prev_t]
-                            - (1 - var["loc_is_down"][loc_id][curr_t]) * int(self.loc_consump_rate[loc_id] * self.dt)
-                            + var["loc_charge_amount"][loc_id][curr_t]
-                            ).OnlyEnforceIf(var["loc_is_normal"][loc_id][curr_t])
+                model.Add(var["custm_charge_amount"][custm_id][curr_t] == int(self.veh_discharge_rate[veh_id] * self.dt) * sum([var["z"][veh_id_][custm_id][curr_t] - var["veh_prepare_at_custm"][veh_id_][custm_id][curr_t] - var["veh_cleanup_at_custm"][veh_id_][custm_id][curr_t] for veh_id_ in range(self.num_vehicles)])
+                                                                      + int(self.veh_discharge_rate[veh_id] * (self.dt - self.custm_surplus_pre_time)) * sum(var["veh_prepare_at_custm2"][veh_id_][custm_id][curr_t] for veh_id_ in range(self.num_vehicles))
+                                                                      + int(self.veh_discharge_rate[veh_id] * (self.dt - self.custm_surplus_post_time)) * sum(var["veh_cleanup_at_custm2"][veh_id_][custm_id][curr_t] for veh_id_ in range(self.num_vehicles)))
+                # custmation's battery change
+                model.Add(var["custm_batt"][custm_id][curr_t] == var["custm_batt"][custm_id][prev_t]
+                            - (1 - var["custm_is_down"][custm_id][curr_t]) * int(self.custm_consump_rate[custm_id] * self.dt)
+                            + var["custm_charge_amount"][custm_id][curr_t]
+                            ).OnlyEnforceIf(var["custm_is_normal"][custm_id][curr_t])
                 
                 # clippling battery
-                # implement loc_is_down & loc_is_full
-                loc_curr_batt = var["loc_batt"][loc_id][prev_t] - int(self.loc_consump_rate[loc_id] * self.dt) + var["loc_charge_amount"][loc_id][curr_t]
-                model.Add(loc_curr_batt <= 0).OnlyEnforceIf(var["loc_is_down"][loc_id][curr_t])
-                model.Add(loc_curr_batt >  0).OnlyEnforceIf(var["loc_is_down"][loc_id][curr_t].Not())
-                model.Add(loc_curr_batt >= self.loc_cap[loc_id]).OnlyEnforceIf(var["loc_is_full"][loc_id][curr_t])
-                model.Add(loc_curr_batt <  self.loc_cap[loc_id]).OnlyEnforceIf(var["loc_is_full"][loc_id][curr_t].Not())
+                # implement custm_is_down & custm_is_full
+                custm_curr_batt = var["custm_batt"][custm_id][prev_t] - int(self.custm_consump_rate[custm_id] * self.dt) + var["custm_charge_amount"][custm_id][curr_t]
+                model.Add(custm_curr_batt <= 0).OnlyEnforceIf(var["custm_is_down"][custm_id][curr_t])
+                model.Add(custm_curr_batt >  0).OnlyEnforceIf(var["custm_is_down"][custm_id][curr_t].Not())
+                model.Add(custm_curr_batt >= self.custm_cap[custm_id]).OnlyEnforceIf(var["custm_is_full"][custm_id][curr_t])
+                model.Add(custm_curr_batt <  self.custm_cap[custm_id]).OnlyEnforceIf(var["custm_is_full"][custm_id][curr_t].Not())
                 # clip battery
-                model.Add(var["loc_batt"][loc_id][curr_t] == 0).OnlyEnforceIf(var["loc_is_down"][loc_id][curr_t])
-                model.Add(var["loc_batt"][loc_id][curr_t] == self.loc_cap[loc_id]).OnlyEnforceIf(var["loc_is_full"][loc_id][curr_t])
+                model.Add(var["custm_batt"][custm_id][curr_t] == 0).OnlyEnforceIf(var["custm_is_down"][custm_id][curr_t])
+                model.Add(var["custm_batt"][custm_id][curr_t] == self.custm_cap[custm_id]).OnlyEnforceIf(var["custm_is_full"][custm_id][curr_t])
 
             # for depots
-            for depot_offst_id, depot_id in enumerate(range(self.num_locs, self.num_nodes)):
+            for depot_offst_id, depot_id in enumerate(range(self.num_custms, self.num_nodes)):
                 for veh_id in range(self.num_vehicles):
                     # implement veh_prepare_at_depot & veh_cleanup_at_depot
                     diff_z_depot = var["z"][veh_id][depot_id][curr_t] - var["z"][veh_id][depot_id][prev_t]
@@ -523,15 +523,15 @@ class CP4TSN():
                         model.Add(var["z"][veh_id][depot_id][curr_t] >= var["z"][veh_id][depot_id][prev_t]).OnlyEnforceIf(var["veh_charge_notenough_notcleanup"][veh_id][depot_offst_id][prev_t])
 
         for t in range(self.T):
-            for loc_id in range(self.num_locs):
-                model.AddBoolOr([var["loc_is_down"][loc_id][t], var["loc_is_full"][loc_id][t], var["loc_is_normal"][loc_id][t]]) # the sate of a location is down or ful or normal
-                model.Add(var["loc_batt"][loc_id][t] <= 0).OnlyEnforceIf(var["loc_is_down2"][loc_id][t])
-                model.Add(var["loc_batt"][loc_id][t] >= 1).OnlyEnforceIf(var["loc_is_down2"][loc_id][t].Not())
+            for custm_id in range(self.num_custms):
+                model.AddBoolOr([var["custm_is_down"][custm_id][t], var["custm_is_full"][custm_id][t], var["custm_is_normal"][custm_id][t]]) # the sate of a custmation is down or ful or normal
+                model.Add(var["custm_batt"][custm_id][t] <= 0).OnlyEnforceIf(var["custm_is_down2"][custm_id][t])
+                model.Add(var["custm_batt"][custm_id][t] >= 1).OnlyEnforceIf(var["custm_is_down2"][custm_id][t].Not())
 
     def add_objective_constraints(self, model, var):
-        # calculate the number of downed locations at each step
+        # calculate the number of downed custmations at each step
         for t in range(self.T):
-            model.Add(var["num_down_loc"][t] == sum(var["loc_is_down2"][loc_id_][t] for loc_id_ in range(self.num_locs)))
+            model.Add(var["num_down_custm"][t] == sum(var["custm_is_down2"][custm_id_][t] for custm_id_ in range(self.num_custms)))
         # calculate the total travel distance of each EV
         for veh_id in range(self.num_vehicles):
             model.Add(var["travel_distance"][veh_id] == sum(var["x"][veh_id, arc] * self.tsn.arc_distance(arc) for arc in self.tsn.arcs))
@@ -542,8 +542,8 @@ class CP4TSN():
                        loss_coef: int):
         # for travel distance
         avg_travel_distance = sum(var["travel_distance"][veh_id] for veh_id in range(self.num_vehicles)) * int(BIT_LARGE_VALUE / self.num_vehicles)
-        # for downed locs
-        down_rate = sum(var["num_down_loc"][t] for t in range(self.T)) * int(LARGE_VALUE / (self.num_locs * self.T)) * BIT_LARGE_VALUE
+        # for downed custms
+        down_rate = sum(var["num_down_custm"][t] for t in range(self.T)) * int(LARGE_VALUE / (self.num_custms * self.T)) * BIT_LARGE_VALUE
         model.Add(var["loss1"] == avg_travel_distance)
         model.Add(var["loss2"] == loss_coef * down_rate)
         # define objectives

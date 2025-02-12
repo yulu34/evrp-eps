@@ -152,7 +152,7 @@ class RolloutBaseline(Baseline):
         
         # update dataset for comparing current policy with the baseline policy
         self.dataset = CIRPDataset().generate(num_samples=self.num_greedy_samples,
-                                              num_locs=self.opts.num_locs,
+                                              num_custms=self.opts.num_custms,
                                               num_depots=self.opts.num_depots,
                                               num_vehicles=self.opts.num_vehicles,
                                               vehicle_cap=self.opts.vehicle_cap,

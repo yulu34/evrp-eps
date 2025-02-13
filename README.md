@@ -23,7 +23,7 @@ docker run -it --rm -v </path/to/clone/repo>:/workspace/app --name evrp-eps -p <
 ## 🔧 Usage
 ### 1. Generating synthetic data
 First of all, we generate synthetic datasets for training/validation/evaluation. We recommend more than 12.8M training samples.
-If you want to change some parameters, check the other options with ```python generate_datasets.py -h```.
+If you want to change some parameters, check the other options with ```python generate_dataset.py -h```.
 ```
 python generate_dataset.py --save_dir data/synthetic_data --type all --num_samples 1280000 10000 10000
 ```

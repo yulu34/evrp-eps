@@ -54,7 +54,7 @@ if __name__ == "__main__":
     # model settings
     parser.add_argument("--model_dir",    type=str,   required=True)
     parser.add_argument("--penalty_coef", type=float, default=100)
-    parser.add_argument("--max_epoch",    type=int,   default=1)
+    parser.add_argument("--max_epoch",    type=int,   default=0)
 
     # other parameters
     parser.add_argument("--vehicle_speed", type=float, default=41.0)

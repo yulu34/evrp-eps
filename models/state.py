@@ -312,6 +312,7 @@ class CIRPState(object):
         at_custm = ~at_depot
         curr_vehicle_at_custm = curr_vehicle_mask & at_custm
         curr_vehicle_at_depot = curr_vehicle_mask & at_depot
+        #probably we will revise here.
         self.vehicle_pre_time  += curr_vehicle_at_custm * self.pre_time_custm + curr_vehicle_at_depot * self.pre_time_depot
         self.vehicle_post_time += curr_vehicle_at_custm * self.post_time_custm + curr_vehicle_at_depot * self.post_time_depot
         
@@ -570,7 +571,7 @@ class CIRPState(object):
         # i.e., if a selcted vechile is currently at a depot, it cannot visit other depots in the next step (but it can stay in the same depot)
         # self.mask_depot_to_other_depots(mask, next_node_id)
         # mask 3: vehicles cannot visit a custmation/depot that other vehicles are visiting
-        self.mask_visited_custms(mask)
+        #self.mask_visited_custms(mask)  # 1 comment the line , allowing accounting in the same custmor;
         # mask 4: forbit vehicles to visit depots that have small discharge rate
         self.remove_small_depots(mask, next_node_id)
         # mask 5: in skipped episodes(instances), the selcted vehicles always stay in the same place

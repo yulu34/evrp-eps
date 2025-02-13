@@ -42,7 +42,7 @@ if __name__ == "__main__":
     now = datetime.datetime.now()
     parser = argparse.ArgumentParser()
     # general settings
-    parser.add_argument("--gpu",              type=int, default=-1)
+    parser.add_argument("--gpu",              type=int, default=1)
     parser.add_argument("--num_workers",      type=int, default=4)
     parser.add_argument("--output_dir",       type=str, default=f"results/results_{now.strftime('%Y%m%d_%H%M%S')}")
     parser.add_argument("--log_fname",        type=str, default=None)

@@ -27,7 +27,7 @@ def eval(dataset_path: str,
          wait_time: float = 0.5,
          time_horizon: float = 12,
          random_seed: int = 1234,
-         gpu: int = -1,
+         gpu: int = 1,
          num_workers: int = 4,
          visualize_routes: bool = True,
          output_dir: str = None) -> Dict[str, Any]:
@@ -193,7 +193,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     # general settings
     parser.add_argument("--random_seed",      type=int, default=1234)
-    parser.add_argument("--gpu",              type=int, default=-1)
+    parser.add_argument("--gpu",              type=int, default=1)
     parser.add_argument("--num_workers",      type=int, default=4)
     parser.add_argument("--visualize_routes", action="store_true")
     parser.add_argument("--output_dir",       type=str, default=f"results/results_{now}")
